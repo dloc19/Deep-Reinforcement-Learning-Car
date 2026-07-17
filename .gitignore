@@ -1,0 +1,60 @@
+# Local tools and editor settings
+.agents/
+.vscode/
+.idea/
+
+# CARLA binary distribution (download/install separately)
+CARLA_0.9.10/
+
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Collected datasets and generated outputs
+dataset/
+datasets/
+data/raw/
+data/processed/
+outputs/
+runs/
+logs/
+*.log
+
+# Model checkpoints and large ML artifacts
+checkpoints/
+models/
+*.ckpt
+*.pth
+*.pt
+*.onnx
+*.h5
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+

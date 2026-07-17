@@ -1,0 +1,42 @@
+{
+  "connection": {
+    "host": "127.0.0.1",
+    "port": 2000,
+    "timeout": 30.0,
+    "role_name": "hero",
+    "vehicle_id": 0,
+    "wait_vehicle_timeout": 120.0
+  },
+  "dataset": {
+    "output": "D:/CARLA_DATA"
+  },
+  "camera": {
+    "image_mode": "seg-only",
+    "save_seg_color": true,
+    "width": 800,
+    "height": 450,
+    "fov": 90.0,
+    "fps": 10.0,
+    "camera_x": 1.5,
+    "camera_y": 0.0,
+    "camera_z": 2.4,
+    "camera_pitch": -5.0
+  },
+  "collection": {
+    "max_samples": 25000,
+    "duration": 0.0,
+    "queue_size": 32,
+    "no_event_sensors": false
+  },
+  "astar": {
+    "lookahead_m": 5.0,
+    "route_lookaheads": "5,10,20,30",
+    "graph_resolution": 2.0,
+    "lane_change_cost": 3.0,
+    "no_map_export": false,
+    "goal_spawn_index": -1,
+    "goal_x": null,
+    "goal_y": null,
+    "goal_z": 0.0
+  }
+}
