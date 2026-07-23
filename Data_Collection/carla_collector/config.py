@@ -60,8 +60,14 @@ def parse_args():
     camera.add_argument(
         "--image-mode", choices=("seg-only", "seg-rgb"), default="seg-only",
         help="seg-only tiet kiem tai nguyen; seg-rgb luu them RGB")
-    camera.add_argument("--save-seg-color", action="store_true",
-                        help="Luu semantic to mau de xem, khong dung train")
+    color_output = camera.add_mutually_exclusive_group()
+    color_output.add_argument(
+        "--save-seg-color", dest="save_seg_color", action="store_true",
+        help="Luu semantic to mau 3 kenh de xem hoac train")
+    color_output.add_argument(
+        "--no-seg-color", dest="save_seg_color", action="store_false",
+        help="Chi luu seg_label 1 kenh de tiet kiem dung luong")
+    camera.set_defaults(save_seg_color=False)
     camera.add_argument("--camera-x", type=float, default=1.5)
     camera.add_argument("--camera-y", type=float, default=0.0)
     camera.add_argument("--camera-z", type=float, default=2.4)
@@ -72,7 +78,14 @@ def parse_args():
     route.add_argument("--route-lookaheads", default="5,10,20,30")
     route.add_argument("--graph-resolution", type=float, default=2.0)
     route.add_argument("--lane-change-cost", type=float, default=3.0)
-    route.add_argument("--no-map-export", action="store_true")
+    map_output = route.add_mutually_exclusive_group()
+    map_output.add_argument(
+        "--map-export", dest="no_map_export", action="store_false",
+        help="Xuat OpenDRIVE va graph de dung cho A* sau nay")
+    map_output.add_argument(
+        "--no-map-export", dest="no_map_export", action="store_true",
+        help="Khong xuat graph A* trong session hien tai")
+    route.set_defaults(no_map_export=False)
     route.add_argument("--goal-spawn-index", type=int, default=-1)
     route.add_argument("--goal-x", type=float, default=None)
     route.add_argument("--goal-y", type=float, default=None)

@@ -19,6 +19,7 @@ def write_metadata(path, world, world_map, ego, args, session_id,
         "wetness", "fog_falloff"]
     metadata = {
         "created_utc": utc_now(),
+        "schema_version": "2.0",
         "carla_version": getattr(carla, "__version__", "0.9.10"),
         "session_id": session_id,
         "episode_id": getattr(world, "id", ""),
@@ -52,7 +53,19 @@ def write_metadata(path, world, world_map, ego, args, session_id,
             "status": "reserved_until_astar_planner_is_connected",
             "fields": ROUTE_FIELDS,
         },
-        "notes": "seg_label stores raw class IDs; seg_color is visualization only.",
+        "training_contract": {
+            "imitation_observation": [
+                "seg_label_or_seg_color", "speed_mps", "yaw_rate_rps",
+                "previous_steer", "previous_longitudinal"],
+            "action": ["steer", "longitudinal"],
+            "reward_or_metrics_only": [
+                "normalized_lane_offset", "heading_error_rad", "off_lane",
+                "steer_delta", "longitudinal_delta"],
+        },
+        "notes": (
+            "seg_label stores raw class IDs and is the resource-efficient training input; "
+            "seg_color may also be trained as a 3-channel categorical image when its palette "
+            "is kept unchanged."),
     }
     with path.open("w", encoding="utf-8") as handle:
         json.dump(metadata, handle, indent=2, ensure_ascii=False)

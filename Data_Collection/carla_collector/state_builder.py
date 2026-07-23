@@ -68,6 +68,9 @@ class StateBuilder:
         yaw = math.radians(transform.rotation.yaw)
         forward_speed = velocity.x * math.cos(yaw) + velocity.y * math.sin(yaw)
         lateral_speed = -velocity.x * math.sin(yaw) + velocity.y * math.cos(yaw)
+        longitudinal_accel = acceleration.x * math.cos(yaw) + acceleration.y * math.sin(yaw)
+        lateral_accel = -acceleration.x * math.sin(yaw) + acceleration.y * math.cos(yaw)
+        longitudinal = float(control.throttle) - float(control.brake)
 
         state = {
             "session_id": self.session_id,
@@ -89,9 +92,13 @@ class StateBuilder:
             "distance_travelled_m": self.distance_travelled_m,
             "accel_x": acceleration.x, "accel_y": acceleration.y, "accel_z": acceleration.z,
             "accel_mps2": magnitude(acceleration),
+            "longitudinal_accel_mps2": longitudinal_accel,
+            "lateral_accel_mps2": lateral_accel,
             "angular_x_deg_s": angular.x, "angular_y_deg_s": angular.y,
             "angular_z_deg_s": angular.z,
+            "yaw_rate_rps": math.radians(angular.z),
             "steer": control.steer, "throttle": control.throttle, "brake": control.brake,
+            "longitudinal": longitudinal,
             "hand_brake": int(control.hand_brake), "reverse": int(control.reverse),
             "manual_gear_shift": int(control.manual_gear_shift), "gear": control.gear,
             "speed_limit_kmh": self.ego.get_speed_limit(),
@@ -112,6 +119,10 @@ class StateBuilder:
         dy = location.y - wp_tf.location.y
         wp_yaw = math.radians(wp_tf.rotation.yaw)
         lane_offset = dx * (-math.sin(wp_yaw)) + dy * math.cos(wp_yaw)
+        half_lane_width = max(float(waypoint.lane_width) * 0.5, 1e-6)
+        normalized_lane_offset = lane_offset / half_lane_width
+        heading_error_deg = normalize_angle(
+            transform.rotation.yaw - wp_tf.rotation.yaw)
         next_wp, candidate_count = self.select_next_waypoint(waypoint)
         wp_local_x, wp_local_y = world_to_ego(wp_tf.location, transform)
         successors = waypoint.next(self.args.graph_resolution)
@@ -126,8 +137,10 @@ class StateBuilder:
             "lane_type": enum_text(waypoint.lane_type),
             "lane_change": enum_text(waypoint.lane_change),
             "lane_offset_m": lane_offset,
-            "heading_error_deg": normalize_angle(
-                transform.rotation.yaw - wp_tf.rotation.yaw),
+            "normalized_lane_offset": normalized_lane_offset,
+            "heading_error_deg": heading_error_deg,
+            "heading_error_rad": math.radians(heading_error_deg),
+            "off_lane": int(abs(lane_offset) > half_lane_width),
             "waypoint_x": wp_tf.location.x, "waypoint_y": wp_tf.location.y,
             "waypoint_z": wp_tf.location.z, "waypoint_yaw_deg": wp_tf.rotation.yaw,
             "waypoint_local_x": wp_local_x, "waypoint_local_y": wp_local_y,

@@ -13,8 +13,8 @@
   "camera": {
     "image_mode": "seg-only",
     "save_seg_color": true,
-    "width": 800,
-    "height": 450,
+    "width": 192,
+    "height": 108,
     "fov": 90.0,
     "fps": 10.0,
     "camera_x": 1.5,
@@ -23,9 +23,9 @@
     "camera_pitch": -5.0
   },
   "collection": {
-    "max_samples": 25000,
+    "max_samples": 50000,
     "duration": 0.0,
-    "queue_size": 32,
+    "queue_size": 64,
     "no_event_sensors": false
   },
   "astar": {
@@ -33,7 +33,7 @@
     "route_lookaheads": "5,10,20,30",
     "graph_resolution": 2.0,
     "lane_change_cost": 3.0,
-    "no_map_export": false,
+    "no_map_export": true,
     "goal_spawn_index": -1,
     "goal_x": null,
     "goal_y": null,

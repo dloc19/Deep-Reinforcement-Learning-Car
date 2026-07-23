@@ -32,6 +32,12 @@ def main():
         "left_waypoint_id", "right_waypoint_id", "goal_waypoint_id",
         "route_id", "route_target_waypoint_id", "route_command",
         "route_progress_m", "route_remaining_m"}
+    training_fields = {
+        "seg_label_path", "seg_color_path", "speed_mps", "yaw_rate_rps",
+        "steer", "throttle", "brake", "longitudinal", "previous_steer",
+        "previous_longitudinal", "steer_delta", "longitudinal_delta",
+        "lane_offset_m", "normalized_lane_offset", "heading_error_rad",
+        "lane_width_m", "off_lane"}
     graph = metadata.get("map_graph", {})
     if graph.get("exported"):
         for filename in ("map.xodr", "spawn_points.csv", "map_nodes.csv",
@@ -45,6 +51,10 @@ def main():
         missing_fields = sorted(astar_fields - set(reader.fieldnames or []))
         if missing_fields:
             errors.append("states.csv thieu A* fields: %s" % ", ".join(missing_fields))
+        missing_training = sorted(training_fields - set(reader.fieldnames or []))
+        if missing_training:
+            errors.append(
+                "states.csv thieu training fields: %s" % ", ".join(missing_training))
         for line_no, row in enumerate(reader, start=2):
             frame = int(row["frame"])
             if frame in frames:

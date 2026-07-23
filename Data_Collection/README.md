@@ -13,7 +13,7 @@ carla_data_pipeline/
 ├── build_manifest.py               # gộp và chia nhiều session
 └── carla_collector/
     ├── config.py                   # tham số CLI và validation
-    ├── schema.py                   # 110 cột CSV, màu semantic
+    ├── schema.py                   # schema CSV cho IL, DRL và trường A* dự phòng
     ├── geometry.py                 # tọa độ, góc, waypoint helper
     ├── events.py                   # collision/lane-invasion counter
     ├── synchronizer.py             # ghép camera/state theo frame
@@ -45,6 +45,7 @@ File `collector_config.json` mặc định lưu đồng thời `seg_label` và `
 thu đúng **25.000 mẫu hợp lệ mỗi map** rồi tự dừng. Collector vẫn chỉ spawn một
 semantic camera, không spawn RGB camera. Ở 10 FPS, thời gian lý thuyết khoảng
 41 phút 40 giây/map. Bốn map sẽ cho khoảng 100.000 mẫu trước khi lọc.
+Graph A* mặc định chưa được xuất vì A* là giai đoạn mở rộng sau IL và DRL.
 
 Những dòng thường cần chỉnh:
 
@@ -63,6 +64,9 @@ Những dòng thường cần chỉnh:
   "collection": {
     "max_samples": 25000,
     "duration": 0.0
+  },
+  "astar": {
+    "no_map_export": true
   }
 }
 ```
@@ -118,8 +122,12 @@ import time
 
 world = client.load_world("Town01")
 time.sleep(3)
+world.set_weather(carla.WeatherParameters.ClearNoon)  # đổi preset nếu cần
 print("Map hiện tại:", world.get_map().name)
 ```
+
+Phải đặt thời tiết **sau** `load_world()`, vì đổi map tạo một `World` mới. Collector
+tự đọc thời tiết hiện tại và ghi đầy đủ vào `metadata.json`; không tự thay đổi thời tiết.
 
 ## 1. Dữ liệu được lưu
 
@@ -130,12 +138,6 @@ dataset/
 └── Town01_20260715_230000_123456/
     ├── metadata.json
     ├── summary.json
-    ├── goal.json                    # chỉ có khi chọn đích
-    ├── map.xodr                     # OpenDRIVE gốc của map
-    ├── spawn_points.csv
-    ├── map_nodes.csv                # node graph A*
-    ├── map_edges.csv                # cạnh có cost graph A*
-    ├── map_graph_metadata.json
     ├── states.csv
     ├── seg_label/00001234.png
     ├── rgb/00001234.png             # chỉ khi --image-mode seg-rgb
@@ -143,26 +145,32 @@ dataset/
 ```
 
 - `rgb`: ảnh RGB tùy chọn để đối chiếu.
-- `seg_label`: ảnh một kênh, mỗi pixel là semantic class ID `0..12`. **Dùng ảnh này làm đầu vào/nhãn học**, không dùng ảnh màu.
-- `seg_color`: ảnh tô màu chỉ để kiểm tra trực quan.
+- `seg_label`: ảnh một kênh, mỗi pixel là semantic class ID `0..12`; đây là input
+  tiết kiệm dung lượng và tính toán nhất.
+- `seg_color`: ảnh semantic ba kênh theo bảng màu cố định; có thể dùng để train
+  backbone CNN hoặc dùng kiểm tra trực quan. Không được dùng ColorJitter/hue/saturation.
 - `states.csv`: mỗi dòng khớp đúng một bộ ảnh qua cột `frame`.
 - `metadata.json`: map, xe, thời tiết, cấu hình camera, camera intrinsics và thông tin graph.
-- `map.xodr`: mô tả OpenDRIVE đầy đủ để có thể dựng lại topology.
-- `map_nodes.csv`: dense driving waypoints mặc định cách nhau 2 m.
-- `map_edges.csv`: cạnh có hướng gồm lane-follow, nhánh giao lộ và lane-change.
-- `spawn_points.csv`: dùng chọn start/goal bằng chỉ số ổn định trong cùng map.
+- Khi bật `--map-export`, session có thêm `map.xodr`, `spawn_points.csv`,
+  `map_nodes.csv`, `map_edges.csv` và `map_graph_metadata.json` cho A* sau này.
 
 Xem `ASTAR_SCHEMA.md` trong gói mã nguồn để biết data contract của planner và route tracker.
 
 CSV gồm:
 
-- Nhãn điều khiển chuyên gia: `steer`, `throttle`, `brake`, `gear`, `reverse`.
+- Nhãn điều khiển chuyên gia: `steer`, `throttle`, `brake` và
+  `longitudinal = throttle - brake`.
+- Hành động trước và độ thay đổi: `previous_steer`, `previous_longitudinal`,
+  `steer_delta`, `longitudinal_delta`.
 - Trạng thái xe: vị trí, góc quay, vận tốc, gia tốc, vận tốc góc, giới hạn tốc độ và đèn giao thông.
-- Trạng thái bám làn: `lane_offset_m`, `heading_error_deg`, `road_id`, `section_id`, `lane_id`, `waypoint_s`, độ rộng làn.
+- Trạng thái bám làn: `lane_offset_m`, `normalized_lane_offset`,
+  `heading_error_rad`, `off_lane`, `road_id`, `section_id`, `lane_id`,
+  `waypoint_s` và độ rộng làn.
 - Dữ liệu route/A*: ID waypoint hiện tại, OpenDRIVE `(road_id, section_id, lane_id, s)`,
   junction, làn trái/phải, mọi successor ở bước graph, các waypoint nhìn trước 5/10/20/30 m,
   tọa độ local theo xe và destination tùy chọn.
-- Sự kiện cho reward DRL: tổng số collision và lane invasion.
+- `collision_count` và `lane_invasion_count` chỉ là thông tin chẩn đoán tùy chọn;
+  pipeline không triển khai tránh vật cản và không đưa chúng vào observation.
 
 Các cột `route_*` đã được dành sẵn cho output của A*. Trước khi planner được nối vào,
 chúng để trống có chủ ý; collector không tự đoán nhánh rẽ tại giao lộ.
@@ -173,16 +181,15 @@ Imitation learning nên sử dụng:
 
 ```text
 Observation:
-    seg_label -> one-hot/embedding semantic
-    forward_speed_mps
-    lane_offset_m
-    heading_error_deg
-    next_waypoint_local_x/y hoặc route_target_local_x/y
+    seg_label one-hot/embedding hoặc seg_color 3 kênh
+    speed_mps
+    yaw_rate_rps
+    previous_steer
+    previous_longitudinal
 
 Expert action:
     steer
-    throttle
-    brake
+    longitudinal
 ```
 
 Có thể đổi nhãn dọc thành một biến liên tục để dùng chung actor head với DRL:
@@ -193,12 +200,14 @@ action = [steer, longitudinal]
 ```
 
 Không đưa class ID của `seg_label` vào CNN như cường độ xám có thứ tự. Hãy one-hot
-13 lớp, hoặc gom thành các nhóm Road, RoadLine, Sidewalk, Vehicle, Pedestrian,
-TrafficLight/Sign và Other. `seg_color` chỉ là visualization, không phải input tối ưu.
+13 lớp, dùng embedding, hoặc gom thành các nhóm semantic. Nếu dùng `seg_color`,
+giữ nguyên bảng màu và chuẩn hóa ba kênh nhất quán.
 
 Fine-tune DRL online không cần reward lưu trong tập imitation. `CarlaEnv.step()`
-sau này phải tính reward từ route progress, lane offset, heading error, tốc độ,
-steer jerk, lane invasion và collision; đồng thời trả `next_observation` và `done`.
+sau này tính reward từ tốc độ tiến, lane offset, heading error, steer delta,
+longitudinal delta và yaw rate; đồng thời trả `next_observation` và `done`.
+Không đưa `lane_offset_m` và `heading_error_rad` vào policy nếu muốn mạng thực sự
+học quan sát làn từ segmentation; chỉ dùng chúng làm reward, auxiliary target và metric.
 
 ## 2. Cài môi trường
 
@@ -253,14 +262,22 @@ cd <thu_muc_pipeline>
 python collect_data.py --output D:\CARLA_DATA --image-mode seg-only --fps 10 --width 800 --height 450
 ```
 
-Đây là lệnh khuyến nghị cho máy của bạn: chỉ một semantic camera, chỉ lưu class-mask
-PNG một kênh. Nếu cần RGB để debug một vài session:
+Đây là lệnh tối giản: chỉ một semantic camera và class-mask PNG một kênh. Cấu hình
+JSON mặc định còn bật `save_seg_color=true`, nên khi chạy bằng `run_collector.bat`
+sẽ lưu đồng thời label một kênh và ảnh semantic màu. Nếu cần thêm RGB để đối chiếu:
 
 ```powershell
 python collect_data.py --output D:\CARLA_DATA --image-mode seg-rgb --save-seg-color
 ```
 
-Lệnh trên vẫn xuất graph A* dù chưa chọn đích. Nếu muốn ghi sẵn một đích là spawn point 12:
+Trong giai đoạn IL/DRL hiện tại, `collector_config.json` đặt
+`"no_map_export": true`. Khi bắt đầu phần A*, chỉ cần đổi thành `false` hoặc chạy:
+
+```powershell
+python collect_data.py --output D:\CARLA_DATA --map-export
+```
+
+Nếu muốn ghi sẵn một đích là spawn point 12 trong giai đoạn A*:
 
 ```powershell
 python collect_data.py --output D:\CARLA_DATA --goal-spawn-index 12
@@ -275,7 +292,7 @@ python collect_data.py --output D:\CARLA_DATA --goal-x 85.0 --goal-y 12.5 --goal
 Điều chỉnh mật độ graph và chi phí chuyển làn:
 
 ```powershell
-python collect_data.py --graph-resolution 2.0 --lane-change-cost 3.0
+python collect_data.py --map-export --graph-resolution 2.0 --lane-change-cost 3.0
 ```
 
 `lane-change-cost=3.0` khiến A* ưu tiên đi tiếp trong làn, chỉ chuyển làn khi route cần.
@@ -325,8 +342,8 @@ map nếu muốn map đó xuất hiện trong cả train/validation/test.
 python verify_dataset.py D:\CARLA_DATA\Town01_20260715_230000_123456 --strict
 ```
 
-Kết quả tốt phải có `rows == unique_frames`, `astar_nodes > 0`, `astar_edges > 0`
-và `errors: []`.
+Kết quả tốt phải có `rows == unique_frames` và `errors: []`. Khi bật xuất graph
+A*, kết quả cũng phải có `astar_nodes > 0` và `astar_edges > 0`.
 
 Sau khi đã thu đủ tất cả map, tạo manifest và chia theo **session**, không chia ngẫu
 nhiên từng frame:
@@ -355,30 +372,35 @@ python build_manifest.py D:\CARLA_DATA --holdout-map Town03 --seed 42
 
 ### Imitation learning ban đầu
 
-Đầu vào có thể là `seg_label` one-hot/embedding hoặc RGB + segmentation. Nhãn chính là `[steer, throttle, brake]`. Nên chia train/val/test **theo session hoặc theo chuyến chạy**, không random từng frame, để tránh các frame liên tiếp rò rỉ sang validation.
+Đầu vào là `seg_label` one-hot/embedding hoặc `seg_color`, cùng `speed_mps`,
+`yaw_rate_rps`, `previous_steer` và `previous_longitudinal`. Nhãn chính là
+`[steer, longitudinal]`. Nên chia train/val/test **theo session**, không random
+từng frame, để tránh các frame liên tiếp rò rỉ sang validation.
 
 Không nên chỉ thu autopilot chạy hoàn hảo ở giữa làn. Hãy thu nhiều session với:
 
 - Town01, Town02, Town03; nhiều thời tiết và thời gian trong ngày.
-- Đường thẳng, cua, ngã tư, tốc độ khác nhau và tình huống có xe/người đi bộ.
+- Đường thẳng, đường cong, giao lộ và nhiều mức tốc độ khác nhau.
 - Một phần dữ liệu phục hồi khi xe lệch nhẹ khỏi tâm làn. Phần này cần can thiệp có kiểm soát hoặc DAgger về sau; không tự làm lệch xe trên tập thu đầu tiên.
 
 ### Fine-tune DRL
 
-Khởi tạo policy từ mô hình imitation. Observation có thể gồm ảnh segmentation, tốc độ, `lane_offset_m`, `heading_error_deg` và route target. Reward gợi ý:
+Khởi tạo actor từ mô hình imitation và giữ nguyên observation/action. Dùng
+`lane_offset_m` và `heading_error_rad` để tính reward, không đưa chúng vào observation.
+Reward gợi ý:
 
 ```text
-r = + tiến độ dọc route
+r = + tốc độ tiến hợp lệ
     - |lane_offset|
     - |heading_error|
     - độ giật steer
-    - phạt lane invasion
-    - phạt rất lớn collision
+    - độ giật ga/phanh
+    - |yaw_rate|
 ```
 
 ### Mở rộng A*
 
-Pipeline đã xuất graph trực tiếp:
+Khi chuyển sang A*, chạy collector một lần trên mỗi map với `--map-export` để xuất:
 
 ```text
 map_nodes.csv

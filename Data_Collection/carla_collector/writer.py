@@ -22,6 +22,8 @@ class DatasetWriter(threading.Thread):
         self.max_samples = max_samples
         self.samples = 0
         self.error = None
+        self.previous_action = None
+        self.previous_sim_time = None
 
     @staticmethod
     def decode_bgra(raw_data, width, height):
@@ -55,6 +57,25 @@ class DatasetWriter(threading.Thread):
         frame = int(state["frame"])
         stem = "%08d" % frame
 
+        current_steer = float(state.get("steer", 0.0))
+        current_longitudinal = float(state.get("longitudinal", 0.0))
+        current_sim_time = float(state.get("sim_time_s", 0.0))
+        if self.previous_action is None:
+            previous_steer = current_steer
+            previous_longitudinal = current_longitudinal
+            sample_delta_seconds = 0.0
+        else:
+            previous_steer, previous_longitudinal = self.previous_action
+            sample_delta_seconds = max(
+                0.0, current_sim_time - float(self.previous_sim_time))
+        state.update({
+            "previous_steer": previous_steer,
+            "previous_longitudinal": previous_longitudinal,
+            "steer_delta": current_steer - previous_steer,
+            "longitudinal_delta": current_longitudinal - previous_longitudinal,
+            "sample_delta_seconds": sample_delta_seconds,
+        })
+
         seg_data, seg_w, seg_h = packet["seg"]
         seg_bgra = self.decode_bgra(seg_data, seg_w, seg_h)
         labels = seg_bgra[:, :, 2].copy()  # Raw class ID is in BGRA red.
@@ -87,4 +108,6 @@ class DatasetWriter(threading.Thread):
             "seg_color_path": color_rel,
         })
         csv_writer.writerow({field: state.get(field, "") for field in CSV_FIELDS})
+        self.previous_action = (current_steer, current_longitudinal)
+        self.previous_sim_time = current_sim_time
         self.samples += 1
