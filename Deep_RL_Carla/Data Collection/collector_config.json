@@ -11,10 +11,10 @@
     "output": "D:/CARLA_DATA"
   },
   "camera": {
-    "image_mode": "seg-only",
+    "image_mode": "seg-rgb",
     "save_seg_color": true,
-    "width": 192,
-    "height": 108,
+    "width": 480,
+    "height": 384,
     "fov": 90.0,
     "fps": 10.0,
     "camera_x": 1.5,
@@ -23,9 +23,9 @@
     "camera_pitch": -5.0
   },
   "collection": {
-    "max_samples": 50000,
+    "max_samples": 25000,
     "duration": 0.0,
-    "queue_size": 64,
+    "queue_size": 128,
     "no_event_sensors": false
   },
   "astar": {

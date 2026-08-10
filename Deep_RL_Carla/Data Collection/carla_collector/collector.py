@@ -78,7 +78,10 @@ class CarlaCollector:
     def capture_state(self, world_snapshot):
         state = self.state_builder.build(world_snapshot)
         if state is None:
-            self.stop_event.set()
+            #self.stop_event.set()
+            # Ego không xuất hiện trong snapshot này (frame miss tạm thời).
+            # Chỉ bỏ qua frame, KHÔNG dừng collector — nếu ego thực sự bị
+            # destroy thì vòng lặp chính sẽ phát hiện qua ego.is_alive.
             return
         self.sync.put(world_snapshot.frame, "state", state)
 

@@ -102,12 +102,26 @@ class StateBuilder:
             "hand_brake": int(control.hand_brake), "reverse": int(control.reverse),
             "manual_gear_shift": int(control.manual_gear_shift), "gear": control.gear,
             "speed_limit_kmh": self.ego.get_speed_limit(),
-            "traffic_light_state": enum_text(self.ego.get_traffic_light_state()),
+            "traffic_light_state": self._traffic_light_label(),
             "collision_count": collisions, "lane_invasion_count": invasions,
         }
         self._add_lane_state(state, transform, location)
         self._add_goal_state(state, transform, location)
         return state
+
+    def _traffic_light_label(self):
+        """Return traffic light state as a string label
+        """
+        if not self.ego.is_at_traffic_light():
+            return "Unknown"
+        state = self.ego.get_traffic_light_state()
+        if state == carla.TrafficLightState.Red:
+            return "Red"
+        if state == carla.TrafficLightState.Yellow:
+            return "Yellow"
+        if state == carla.TrafficLightState.Green:
+            return "Green"
+        return "Unknown"
 
     def _add_lane_state(self, state, transform, location):
         waypoint = self.map.get_waypoint(

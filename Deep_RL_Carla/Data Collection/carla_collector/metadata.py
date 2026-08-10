@@ -56,7 +56,8 @@ def write_metadata(path, world, world_map, ego, args, session_id,
         "training_contract": {
             "imitation_observation": [
                 "seg_label_or_seg_color", "speed_mps", "yaw_rate_rps",
-                "previous_steer", "previous_longitudinal"],
+                "previous_steer", "previous_longitudinal",
+                "traffic_light_state"],
             "action": ["steer", "longitudinal"],
             "reward_or_metrics_only": [
                 "normalized_lane_offset", "heading_error_rad", "off_lane",
