@@ -1,0 +1,166 @@
+# ============================================================
+#  .gitignore — Deep RL with CARLA (Python / Jupyter)
+# ============================================================
+
+# -----------------------------------------------------------
+# 1. EDITOR / IDE
+# -----------------------------------------------------------
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# -----------------------------------------------------------
+# 2. AGENT / TOOL CONFIG (không commit cấu hình cục bộ)
+# -----------------------------------------------------------
+.agents/
+
+# -----------------------------------------------------------
+# 3. CARLA BINARY DISTRIBUTION
+#    (tải riêng qua installer, không đẩy lên repo)
+# -----------------------------------------------------------
+CARLA_0.9.10/
+
+# -----------------------------------------------------------
+# 4. PYTHON CACHE & BUILD
+# -----------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+MANIFEST
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+
+# -----------------------------------------------------------
+# 5. VIRTUAL ENVIRONMENTS
+# -----------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+.env/
+Pipfile.lock
+poetry.lock
+
+# -----------------------------------------------------------
+# 6. JUPYTER NOTEBOOK
+# -----------------------------------------------------------
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+
+# -----------------------------------------------------------
+# 7. DATASET & DỮ LIỆU THU THẬP (rất lớn, lưu ngoài repo)
+#    collector_config.json chỉ ra output: "D:/CARLA_DATA"
+#    Các thư mục dataset cục bộ nếu có:
+# -----------------------------------------------------------
+dataset/
+datasets/
+data/
+raw_data/
+processed_data/
+outputs/
+*.csv
+
+# Ảnh & video thu thập từ CARLA
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.mp4
+*.avi
+*.mkv
+# Ngoại lệ: ảnh tài liệu trong thư mục docs / README nếu có
+!docs/**/*.png
+!docs/**/*.jpg
+
+# -----------------------------------------------------------
+# 8. MODEL CHECKPOINTS & ML ARTIFACTS (thường hàng GB)
+# -----------------------------------------------------------
+checkpoints/
+models/
+runs/
+wandb/
+mlruns/
+*.ckpt
+*.pth
+*.pt
+*.onnx
+*.h5
+*.pkl
+*.joblib
+*.npy
+*.npz
+
+# -----------------------------------------------------------
+# 9. LOG FILES
+# -----------------------------------------------------------
+logs/
+*.log
+*.out
+*.err
+
+# -----------------------------------------------------------
+# 10. SECRETS & CẤU HÌNH CỤC BỘ
+# -----------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets.json
+local_config.json
+
+# -----------------------------------------------------------
+# 11. HỆ ĐIỀU HÀNH
+# -----------------------------------------------------------
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+
+# -----------------------------------------------------------
+# 12. FILE NÉN / ARCHIVE (thường là binary lớn)
+# -----------------------------------------------------------
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# -----------------------------------------------------------
+# 13. CARLA EGG / WHL (cài đặt PythonAPI cục bộ)
+# -----------------------------------------------------------
+*.egg
+*.whl
+carla-*.dist-info/
