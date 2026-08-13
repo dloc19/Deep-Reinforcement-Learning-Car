@@ -1,0 +1,9 @@
+# CARLA 0.9.10 Python API (bat buoc, cai truoc tien):
+#   cd C:\CARLA_0.9.10\PythonAPI\carla\dist
+#   pip install carla-0.9.10-py3.7-win-amd64.egg   (hoac file .whl tuong ung)
+# Yeu cau Python 3.7 (gioi han cua CARLA 0.9.10 client API tren Windows, xem
+# docs/manual_thu_thap_du_lieu.md muc 2).
+
+numpy>=1.18,<2.0
+opencv-python-headless>=4.5
+torch>=1.9,<=1.13.1   # torch 1.13.1 la ban cuoi chinh thuc ho tro Python 3.7

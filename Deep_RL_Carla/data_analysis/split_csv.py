@@ -25,41 +25,44 @@ from pathlib import Path
 KEY_FIELDS = ["session_id", "sample_id", "frame"]
 
 # IL: observation + label
+#
+# QUAN TRỌNG: lane_offset_m/heading_error_rad/is_junction KHÔNG phải observation của model —
+# chúng chỉ dùng để tính reward (DRL) hoặc chẩn đoán (đánh giá IL theo mức lệch làn). Đưa
+# vào input model là lỗi rò rỉ nhãn (leakage) đã sửa trong
+# `behavior_cloning/train_il_kaggle.ipynb` (xem `docs/csv_fields_by_task.md`). Cột này vẫn có
+# mặt trong file split ra vì file CSV này phục vụ cả huấn luyện lẫn đánh giá/phân tích, không
+# phải input tensor trực tiếp — notebook tự chọn đúng tập cột nó cần khi đọc CSV.
 IL_FIELDS = KEY_FIELDS + [
     # Observation — ảnh
     "seg_label_path",
     "seg_color_path",
-    # Observation — trạng thái xe
+    # Observation — trạng thái xe (đúng SCALAR_FEATURE_ORDER trong checkpoint IL)
     "speed_mps",
     "yaw_rate_rps",
     "previous_steer",
     "previous_longitudinal",
-    "lane_offset_m",
-    "heading_error_rad",  
-    # add
     "speed_limit_kmh",
     "traffic_light_state",
-    "is_junction",    
     # Label — hành động chuyên gia
     "steer",
     "longitudinal",
+    # Aux — CHỈ để đánh giá/chẩn đoán, KHÔNG đưa vào model (xem ghi chú ở trên)
+    "lane_offset_m",
+    "heading_error_rad",
+    "is_junction",
 ]
 
 # DRL: IL + các trường tính reward + route (khi A* nối vào)
 DRL_FIELDS = KEY_FIELDS + [
-    # Observation (giống IL)
+    # Observation (giống IL — không gồm lane_offset_m/heading_error_rad/is_junction)
     "seg_label_path",
     "seg_color_path",
     "speed_mps",
     "yaw_rate_rps",
     "previous_steer",
     "previous_longitudinal",
-    "lane_offset_m",
-    "heading_error_rad",
-    # add
     "speed_limit_kmh",
     "traffic_light_state",
-    "is_junction",    
     # Observation bổ sung — route (sau khi A* nối vào, hiện tại để trống)
     "route_target_local_x",
     "route_target_local_y",

@@ -1,0 +1,59 @@
+{
+  "connection": {
+    "host": "127.0.0.1",
+    "port": 2000,
+    "timeout": 20.0
+  },
+  "camera": {
+    "width": 480,
+    "height": 384,
+    "fov": 90.0,
+    "fps": 10.0,
+    "camera_x": 1.5,
+    "camera_y": 0.0,
+    "camera_z": 2.4,
+    "camera_pitch": -5.0
+  },
+  "env": {
+    "vehicle_filter": "vehicle.lincoln.mkz2017",
+    "max_episode_steps": 1000,
+    "off_lane_patience_steps": 20,
+    "warmup_ticks": 4,
+    "frame_timeout": 5.0,
+    "no_rendering": false,
+    "seed": 42
+  },
+  "reward": {
+    "w_speed": 1.0,
+    "w_lane_offset": 1.0,
+    "w_heading": 0.5,
+    "w_steer_delta": 1.0,
+    "w_long_delta": 0.5,
+    "w_yaw_rate": 0.1,
+    "off_lane_penalty": 5.0,
+    "collision_penalty": 50.0,
+    "lane_invasion_penalty": 1.0
+  },
+  "ppo": {
+    "il_checkpoint": "../behavior_cloning/best_il_model.pth",
+    "output": "./runs/ppo_lane_keep",
+    "warm_start": true,
+    "device": "cuda",
+    "gamma": 0.99,
+    "learning_rate": 0.0003,
+    "gae_lambda": 0.95,
+    "clip_range": 0.2,
+    "value_clip_range": 0.2,
+    "entropy_coef": 0.0,
+    "value_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "epochs": 10,
+    "batch_size": 64,
+    "target_kl": 0.02,
+    "total_steps": 2000000,
+    "n_steps": 2048,
+    "save_every_updates": 5,
+    "eval_every_updates": 10,
+    "eval_episodes": 3
+  }
+}

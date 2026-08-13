@@ -1,9 +1,26 @@
-# Thư mục này được bao phủ bởi root .gitignore ở cấp dự án.
-# Chỉ thêm rule đặc thù cho thư mục con này nếu cần thiết.
+# Deep_RL_Carla — root .gitignore
 
-# Dataset đầu ra của bộ thu thập dữ liệu CARLA
+# --- Datasets thu thập từ CARLA (nặng, không commit) ---
 dataset/
+carla_dataset/
+data_collection/dataset/
 
-# Python cache cục bộ (phòng khi git chạy từ thư mục này)
+# --- Checkpoint model (tải rời từ Kaggle / sinh ra khi train local, không commit) ---
+*.pth
+*.pt
+drl_training/runs/
+
+# --- Python ---
 __pycache__/
 *.pyc
+*.pyo
+.ipynb_checkpoints/
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+
+# --- IDE / OS ---
+.idea/
+.DS_Store
+Thumbs.db
