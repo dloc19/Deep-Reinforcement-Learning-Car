@@ -1,13 +1,12 @@
 """Build one vehicle/lane/route-ready state dictionary per world snapshot."""
 
-import json
 import math
 
 import carla
 
 from .geometry import (
-    enum_text, location_distance, magnitude, normalize_angle, utc_now,
-    waypoint_id, waypoint_record, world_to_ego)
+    closest_by_heading, enum_text, location_distance, magnitude,
+    normalize_angle, utc_now, waypoint_id, waypoint_record, world_to_ego)
 from .map_export import junction_id
 
 
@@ -28,10 +27,7 @@ class StateBuilder:
         candidates = waypoint.next(self.args.lookahead_m)
         if not candidates:
             return None, 0
-        chosen = min(
-            candidates,
-            key=lambda item: abs(normalize_angle(
-                item.transform.rotation.yaw - waypoint.transform.rotation.yaw)))
+        chosen = closest_by_heading(candidates, waypoint.transform.rotation.yaw)
         return chosen, len(candidates)
 
     def lookahead_records(self, waypoint, ego_transform):
@@ -40,10 +36,7 @@ class StateBuilder:
             candidates = waypoint.next(distance)
             if not candidates:
                 continue
-            chosen = min(
-                candidates,
-                key=lambda item: abs(normalize_angle(
-                    item.transform.rotation.yaw - waypoint.transform.rotation.yaw)))
+            chosen = closest_by_heading(candidates, waypoint.transform.rotation.yaw)
             record = waypoint_record(chosen, ego_transform)
             record["lookahead_m"] = distance
             record["candidate_count"] = len(candidates)
@@ -159,11 +152,12 @@ class StateBuilder:
             "waypoint_z": wp_tf.location.z, "waypoint_yaw_deg": wp_tf.rotation.yaw,
             "waypoint_local_x": wp_local_x, "waypoint_local_y": wp_local_y,
             "next_candidate_count": candidate_count,
-            "successor_waypoints_json": json.dumps(
-                [waypoint_record(item, transform) for item in successors],
-                separators=(",", ":")),
-            "lookahead_waypoints_json": json.dumps(
-                self.lookahead_records(waypoint, transform), separators=(",", ":")),
+            # Kept as plain lists here, not JSON text: on_tick fires far more often
+            # than the camera's fps, so most states never reach the writer. The
+            # writer thread (only for samples actually kept) does the json.dumps.
+            "successor_waypoints_json": [
+                waypoint_record(item, transform) for item in successors],
+            "lookahead_waypoints_json": self.lookahead_records(waypoint, transform),
         })
         self._add_adjacent_lanes(state, waypoint)
         if next_wp is not None:

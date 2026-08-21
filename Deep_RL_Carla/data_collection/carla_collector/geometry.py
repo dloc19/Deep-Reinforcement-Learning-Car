@@ -29,6 +29,14 @@ def waypoint_id(waypoint):
         waypoint.road_id, waypoint.section_id, waypoint.lane_id, waypoint.s)
 
 
+def closest_by_heading(candidates, reference_yaw_deg):
+    """Return the candidate waypoint whose yaw is nearest reference_yaw_deg."""
+    return min(
+        candidates,
+        key=lambda item: abs(normalize_angle(
+            item.transform.rotation.yaw - reference_yaw_deg)))
+
+
 def world_to_ego(point, ego_transform):
     """Return (forward, right) metres for a world point in the ego frame."""
     dx = point.x - ego_transform.location.x

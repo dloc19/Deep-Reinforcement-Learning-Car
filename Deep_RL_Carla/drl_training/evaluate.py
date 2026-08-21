@@ -14,6 +14,7 @@ Usage:
 """
 
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +23,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config import load_config, peek_algorithm  # noqa: E402
+from csv_logger import CsvLogger  # noqa: E402
 from envs.carla_lane_keep_env import CarlaLaneKeepEnv  # noqa: E402
 from policy.checkpoint_io import load_il_checkpoint  # noqa: E402
 from policy.observation import ObservationContract  # noqa: E402
@@ -97,9 +99,9 @@ def main():
             reason = info.get("terminate_reason", "time_limit")
             mean_offset = float(np.mean(lane_offsets)) if lane_offsets else 0.0
             results.append({
-                "episode": episode, "reward": ep_reward, "length": ep_len, "collided": collided,
-                "off_lane_steps": off_lane_steps, "mean_abs_lane_offset": mean_offset,
-                "terminate_reason": reason,
+                "algorithm": algorithm, "episode": episode, "reward": ep_reward, "length": ep_len,
+                "collided": collided, "off_lane_steps": off_lane_steps,
+                "mean_abs_lane_offset": mean_offset, "terminate_reason": reason,
             })
             print("episode=%d reward=%.2f len=%d collided=%s mean|lane_offset|=%.3fm reason=%s" % (
                 episode, ep_reward, ep_len, collided, mean_offset, reason))
@@ -108,6 +110,26 @@ def main():
 
     if not results:
         return
+
+    if config["_eval_csv_out"]:
+        csv_path = Path(config["_eval_csv_out"]).expanduser().resolve()
+        if csv_path.exists():
+            print("[!] %s da ton tai — se GHI DE (khong noi vao) vi day la 1 lo danh gia "
+                  "doc lap moi; noi vao se tron lan nay voi lan truoc khi ve bieu do." % csv_path)
+        # mode="w": moi lan chay evaluate.py la MOT lo danh gia doc lap (N episode tren MOT
+        # checkpoint) — xem giai thich chi tiet trong CsvLogger.__init__. Ghi kem checkpoint
+        # + thoi diem chay de con biet ket qua nay ung voi checkpoint/lan chay nao.
+        checkpoint_path = str(Path(config["_resume"]).expanduser().resolve())
+        eval_run_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        fieldnames = ["algorithm", "episode", "reward", "length", "collided",
+                      "off_lane_steps", "mean_abs_lane_offset", "terminate_reason",
+                      "checkpoint", "eval_run_utc"]
+        logger = CsvLogger(csv_path, fieldnames, mode="w")
+        for row in results:
+            logger.log(dict(row, checkpoint=checkpoint_path, eval_run_utc=eval_run_utc))
+        logger.close()
+        print("Da ghi ket qua tung episode ra (ghi de file cu neu co):", csv_path)
+
     rewards = [r["reward"] for r in results]
     collision_rate = 100.0 * sum(1 for r in results if r["collided"]) / len(results)
     mean_offset = float(np.mean([r["mean_abs_lane_offset"] for r in results]))

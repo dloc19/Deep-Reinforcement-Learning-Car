@@ -29,7 +29,7 @@ KEY_FIELDS = ["session_id", "sample_id", "frame"]
 # QUAN TRỌNG: lane_offset_m/heading_error_rad/is_junction KHÔNG phải observation của model —
 # chúng chỉ dùng để tính reward (DRL) hoặc chẩn đoán (đánh giá IL theo mức lệch làn). Đưa
 # vào input model là lỗi rò rỉ nhãn (leakage) đã sửa trong
-# `behavior_cloning/train_il_kaggle.ipynb` (xem `docs/csv_fields_by_task.md`). Cột này vẫn có
+# `behavior_cloning/train_il.ipynb` (xem `docs/csv_fields_by_task.md`). Cột này vẫn có
 # mặt trong file split ra vì file CSV này phục vụ cả huấn luyện lẫn đánh giá/phân tích, không
 # phải input tensor trực tiếp — notebook tự chọn đúng tập cột nó cần khi đọc CSV.
 IL_FIELDS = KEY_FIELDS + [
@@ -145,7 +145,30 @@ ASTAR_FIELDS = deduplicate(ASTAR_FIELDS)
 
 # ──────────────────────────────────────────────────────────
 
-def split(session_dir: Path):
+def is_redundant_row(row, last_kept_sim_time, dedup_stationary_speed,
+                      dedup_action_eps, dedup_min_interval_s):
+    """Hau kiem tra trung lap cho states.csv thu TRUOC khi collector co filter nay.
+
+    Cung tieu chi voi carla_collector/writer.py (data_collection): chi coi la
+    trung lap khi xe DUNG YEN va hanh dong (steer/longitudinal) khong doi so voi
+    mau da giu gan nhat - khong bao gio loai mau luc xe dang di chuyen. Ap dung
+    truoc khi tach cot, nen il/drl/astar_fields.csv deu duoc loc dong bo.
+    """
+    if dedup_stationary_speed <= 0.0 or last_kept_sim_time is None:
+        return False
+    speed = float(row.get("speed_mps", 0.0) or 0.0)
+    if speed >= dedup_stationary_speed:
+        return False
+    steer_delta = abs(float(row.get("steer_delta", 0.0) or 0.0))
+    long_delta = abs(float(row.get("longitudinal_delta", 0.0) or 0.0))
+    if steer_delta >= dedup_action_eps or long_delta >= dedup_action_eps:
+        return False
+    sim_time = float(row.get("sim_time_s", 0.0) or 0.0)
+    return (sim_time - last_kept_sim_time) < dedup_min_interval_s
+
+
+def split(session_dir: Path, dedup_stationary_speed=0.0, dedup_action_eps=0.02,
+          dedup_min_interval_s=1.0):
     states_path = session_dir / "states.csv"
     if not states_path.is_file():
         sys.exit(f"Không tìm thấy: {states_path}")
@@ -175,9 +198,18 @@ def split(session_dir: Path):
             writers[name] = csv.DictWriter(h, fieldnames=fields, extrasaction="ignore")
             writers[name].writeheader()
 
+        duplicates_filtered = 0
+        rows_kept = 0
+        last_kept_sim_time = None
         with states_path.open(newline="", encoding="utf-8") as src:
             reader = csv.DictReader(src)
             for row in reader:
+                if is_redundant_row(row, last_kept_sim_time, dedup_stationary_speed,
+                                     dedup_action_eps, dedup_min_interval_s):
+                    duplicates_filtered += 1
+                    continue
+                last_kept_sim_time = float(row.get("sim_time_s", 0.0) or 0.0)
+                rows_kept += 1
                 for name, (_, fields) in outputs.items():
                     # Điền "" cho trường không có trong row
                     out_row = {f: row.get(f, "") for f in fields}
@@ -189,13 +221,27 @@ def split(session_dir: Path):
     print("\nĐã tạo:")
     for name, (path, fields) in outputs.items():
         print(f"  {path.name:25s}  {len(fields)} cột")
+    if dedup_stationary_speed > 0:
+        print(f"  Đã lọc {duplicates_filtered} mẫu trùng lặp (dừng yên), giữ lại {rows_kept} mẫu.")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Tách states.csv thành il/drl/astar CSV")
     parser.add_argument("session", help="Thư mục session (chứa states.csv)")
+    parser.add_argument(
+        "--dedup-stationary-speed", type=float, default=0.0,
+        help=("m/s; loc bot mau dung yen + hanh dong khong doi (vd. dung den do) "
+              "truoc khi tach cot. 0 = tat (mac dinh). Dung cho session da thu "
+              "TRUOC khi collector co filter nay (xem data_collection/README.md)."))
+    parser.add_argument("--dedup-action-eps", type=float, default=0.02)
+    parser.add_argument("--dedup-min-interval-s", type=float, default=1.0)
     args = parser.parse_args()
-    split(Path(args.session).expanduser().resolve())
+    if args.dedup_stationary_speed < 0 or args.dedup_action_eps < 0 or args.dedup_min_interval_s < 0:
+        parser.error("Cac tham so --dedup-* phai >= 0")
+    split(Path(args.session).expanduser().resolve(),
+          dedup_stationary_speed=args.dedup_stationary_speed,
+          dedup_action_eps=args.dedup_action_eps,
+          dedup_min_interval_s=args.dedup_min_interval_s)
 
 
 if __name__ == "__main__":

@@ -64,6 +64,27 @@ def allocate_sessions(sessions, train_ratio, val_ratio, seed, holdout_map):
     return assignments
 
 
+def is_redundant_row(row, last_kept_sim_time, dedup_stationary_speed,
+                      dedup_action_eps, dedup_min_interval_s):
+    """Hau kiem tra trung lap cho du lieu da thu TRUOC khi collector co filter nay.
+
+    Cung tieu chi voi carla_collector/writer.py: chi coi la trung lap khi xe DUNG
+    YEN va hanh dong (steer/longitudinal) khong doi so voi mau da giu gan nhat -
+    khong bao gio loai mau luc xe dang di chuyen.
+    """
+    if dedup_stationary_speed <= 0.0 or last_kept_sim_time is None:
+        return False
+    speed = float(row.get("speed_mps", 0.0) or 0.0)
+    if speed >= dedup_stationary_speed:
+        return False
+    steer_delta = abs(float(row.get("steer_delta", 0.0) or 0.0))
+    long_delta = abs(float(row.get("longitudinal_delta", 0.0) or 0.0))
+    if steer_delta >= dedup_action_eps or long_delta >= dedup_action_eps:
+        return False
+    sim_time = float(row.get("sim_time_s", 0.0) or 0.0)
+    return (sim_time - last_kept_sim_time) < dedup_min_interval_s
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Gop cac session CARLA va chia train/val/test theo session")
@@ -75,12 +96,22 @@ def main():
     parser.add_argument(
         "--holdout-map", default="",
         help="Vi du Town03: toan bo Town03 duoc dung lam test cross-map")
+    parser.add_argument(
+        "--dedup-stationary-speed", type=float, default=0.0,
+        help=("m/s; hau loc cac mau dung yen + hanh dong khong doi (vd. dung cho "
+              "den do) khi gop manifest. 0 = tat (mac dinh). Dung cho du lieu da "
+              "thu TRUOC khi collector co filter nay; anh PNG khong bi xoa, chi "
+              "khong duoc dua vao manifest.csv."))
+    parser.add_argument("--dedup-action-eps", type=float, default=0.02)
+    parser.add_argument("--dedup-min-interval-s", type=float, default=1.0)
     args = parser.parse_args()
 
     if args.train_ratio <= 0 or args.val_ratio < 0:
         parser.error("Ti le train/val khong hop le")
     if not args.holdout_map and args.train_ratio + args.val_ratio >= 1.0:
         parser.error("train-ratio + val-ratio phai < 1 khi khong co holdout map")
+    if args.dedup_stationary_speed < 0 or args.dedup_action_eps < 0 or args.dedup_min_interval_s < 0:
+        parser.error("Cac tham so --dedup-* phai >= 0")
 
     root = Path(args.dataset_root).expanduser().resolve()
     sessions = discover_sessions(root)
@@ -97,6 +128,7 @@ def main():
     session_counts = Counter(assignments.values())
     map_counts = defaultdict(Counter)
     action_stats = Counter()
+    duplicates_filtered = 0
 
     with output.open("w", newline="", encoding="utf-8") as output_handle:
         writer = None
@@ -115,7 +147,15 @@ def main():
                     raise ValueError(
                         "Schema khac nhau tai %s; khong tron pipeline version cu va moi" % states_path)
 
+                last_kept_sim_time = None
                 for row in reader:
+                    if is_redundant_row(
+                            row, last_kept_sim_time, args.dedup_stationary_speed,
+                            args.dedup_action_eps, args.dedup_min_interval_s):
+                        duplicates_filtered += 1
+                        continue
+                    last_kept_sim_time = float(row.get("sim_time_s", 0.0) or 0.0)
+
                     seg_relative = row.get("seg_label_path", "")
                     seg_path = session["path"] / seg_relative
                     if not seg_relative or not seg_path.is_file():
@@ -160,6 +200,7 @@ def main():
         "samples_by_map_and_split": {
             split: dict(counts) for split, counts in map_counts.items()},
         "action_distribution": dict(action_stats),
+        "duplicate_frames_filtered": duplicates_filtered,
         "warning": (
             None if len(assignments) >= 3 else
             "Can it nhat 3 sessions de co train, validation va test doc lap"),

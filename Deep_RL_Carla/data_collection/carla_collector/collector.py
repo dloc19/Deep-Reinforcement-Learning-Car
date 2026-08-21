@@ -78,7 +78,6 @@ class CarlaCollector:
     def capture_state(self, world_snapshot):
         state = self.state_builder.build(world_snapshot)
         if state is None:
-            #self.stop_event.set()
             # Ego không xuất hiện trong snapshot này (frame miss tạm thời).
             # Chỉ bỏ qua frame, KHÔNG dừng collector — nếu ego thực sự bị
             # destroy thì vòng lặp chính sẽ phát hiện qua ego.is_alive.
@@ -110,7 +109,10 @@ class CarlaCollector:
             self.session_dir, self.packet_queue, self.stop_event,
             save_rgb=self.args.image_mode == "seg-rgb",
             save_seg_color=self.args.save_seg_color,
-            max_samples=self.args.max_samples)
+            max_samples=self.args.max_samples,
+            dedup_stationary_speed=self.args.dedup_stationary_speed,
+            dedup_action_eps=self.args.dedup_action_eps,
+            dedup_min_interval_s=self.args.dedup_min_interval_s)
         self.writer.start()
         self.tick_callback_id = self.world.on_tick(self.capture_state)
         print("Dang thu thap tai: %s" % self.session_dir)
@@ -127,8 +129,9 @@ class CarlaCollector:
             if self.writer.error:
                 raise self.writer.error
             if time.time() - last_report >= 2.0:
-                print("samples=%d | queue=%d | dropped=%d" % (
-                    self.writer.samples, self.packet_queue.qsize(), self.sync.dropped))
+                print("samples=%d | queue=%d | dropped=%d | dup_skip=%d" % (
+                    self.writer.samples, self.packet_queue.qsize(), self.sync.dropped,
+                    self.writer.duplicates_skipped))
                 last_report = time.time()
             time.sleep(0.1)
         self.stop_event.set()
@@ -148,6 +151,7 @@ class CarlaCollector:
             summary = {
                 "samples_written": self.writer.samples if self.writer else 0,
                 "frames_dropped_or_incomplete": self.sync.dropped,
+                "duplicate_frames_skipped": self.writer.duplicates_skipped if self.writer else 0,
                 "finished_utc": utc_now(),
             }
             try:

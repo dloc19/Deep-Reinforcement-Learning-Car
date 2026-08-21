@@ -1,0 +1,9 @@
+CarlaDashBoard.Wpf/bin/
+CarlaDashBoard.Wpf/obj/
+bridge_server/dataset_live/
+bridge_server/__pycache__/
+bridge_server/bridge/**/__pycache__/
+*.pyc
+
+# Visual Studio: cache/trang thai IDE cuc bo (.suo, .vsidx, *.bin, DocumentLayout)
+.vs/

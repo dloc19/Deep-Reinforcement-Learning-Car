@@ -1,0 +1,9 @@
+# Install into the carla_rl conda env (Python 3.7, already has carla==0.9.10 + torch + numpy):
+#   C:\Users\dloc\miniconda3\envs\carla_rl\python.exe -m pip install -r requirements.txt
+#
+# `carla` itself is NOT listed here — it ships as a version-specific .whl inside the CARLA
+# distribution, not a generic PyPI package, and carla_rl already has it installed.
+
+websockets<11      # 10.x still supports the classic async def handler(websocket, path) API
+opencv-python      # JPEG encode for the /stream camera channels
+numpy

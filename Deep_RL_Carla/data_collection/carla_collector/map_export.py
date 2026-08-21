@@ -1,6 +1,5 @@
 """OpenDRIVE, spawn-point and dense waypoint-graph export for future A*."""
 
-import bisect
 import csv
 import json
 
@@ -8,10 +7,8 @@ import carla
 
 from .geometry import (
     enum_text, location_distance, normalize_angle, waypoint_id, waypoint_record)
-
-
-def driving_lane(waypoint):
-    return waypoint is not None and enum_text(waypoint.lane_type).lower() == "driving"
+from .graph_geometry import (
+    build_lane_index, driving_lane, is_junction_branch, nearest_node, same_direction_lane_change)
 
 
 def junction_id(waypoint):
@@ -57,19 +54,6 @@ class MapArtifacts:
             goal["waypoint_id"], goal["road_id"], goal["lane_id"]))
         return goal_waypoint
 
-    @staticmethod
-    def nearest_graph_node(index, waypoint):
-        if waypoint is None:
-            return None
-        key = (waypoint.road_id, waypoint.section_id, waypoint.lane_id)
-        lane_nodes = index.get(key)
-        if not lane_nodes:
-            return None
-        s_values = [item[0] for item in lane_nodes]
-        pos = bisect.bisect_left(s_values, waypoint.s)
-        choices = lane_nodes[max(0, pos - 1):min(len(lane_nodes), pos + 2)]
-        return min(choices, key=lambda item: abs(item[0] - waypoint.s))[1]
-
     def export(self):
         if self.args.no_map_export:
             return {"exported": False}
@@ -80,7 +64,7 @@ class MapArtifacts:
 
         nodes = [wp for wp in self.map.generate_waypoints(self.args.graph_resolution)
                  if driving_lane(wp)]
-        node_index = self._build_node_index(nodes)
+        node_index = build_lane_index(nodes)
         self._write_nodes(nodes, node_index)
         edge_count = self._write_edges(nodes, node_index)
         stats = {
@@ -123,16 +107,6 @@ class MapArtifacts:
                         "section_id": wp.section_id, "lane_id": wp.lane_id, "s": wp.s})
                 writer.writerow(row)
 
-    @staticmethod
-    def _build_node_index(nodes):
-        index = {}
-        for wp in nodes:
-            key = (wp.road_id, wp.section_id, wp.lane_id)
-            index.setdefault(key, []).append((wp.s, wp))
-        for lane_nodes in index.values():
-            lane_nodes.sort(key=lambda item: item[0])
-        return index
-
     def _write_nodes(self, nodes, node_index):
         fields = [
             "node_id", "road_id", "section_id", "lane_id", "s", "x", "y", "z",
@@ -146,9 +120,9 @@ class MapArtifacts:
                 tf = wp.transform
                 left_lane = wp.get_left_lane()
                 right_lane = wp.get_right_lane()
-                left = self.nearest_graph_node(node_index, left_lane) \
+                left = nearest_node(node_index, left_lane) \
                     if driving_lane(left_lane) else None
-                right = self.nearest_graph_node(node_index, right_lane) \
+                right = nearest_node(node_index, right_lane) \
                     if driving_lane(right_lane) else None
                 writer.writerow({
                     "node_id": waypoint_id(wp), "road_id": wp.road_id,
@@ -196,21 +170,19 @@ class MapArtifacts:
             for wp in nodes:
                 successors = wp.next(self.args.graph_resolution)
                 for candidate in successors:
-                    target = self.nearest_graph_node(node_index, candidate)
-                    is_branch = (
-                        getattr(wp, "is_junction", getattr(wp, "is_intersection", False)) or
-                        len(successors) > 1)
-                    add_edge(wp, target, "JUNCTION_BRANCH" if is_branch else "LANE_FOLLOW")
+                    target = nearest_node(node_index, candidate)
+                    edge_type = "JUNCTION_BRANCH" if is_junction_branch(wp, successors) else "LANE_FOLLOW"
+                    add_edge(wp, target, edge_type)
 
                 lane_change = enum_text(wp.lane_change).lower()
                 left = wp.get_left_lane()
                 if (lane_change in ("left", "both") and driving_lane(left) and
-                        wp.lane_id * left.lane_id > 0):
-                    add_edge(wp, self.nearest_graph_node(node_index, left),
+                        same_direction_lane_change(wp, left)):
+                    add_edge(wp, nearest_node(node_index, left),
                              "LANE_CHANGE_LEFT", self.args.lane_change_cost)
                 right = wp.get_right_lane()
                 if (lane_change in ("right", "both") and driving_lane(right) and
-                        wp.lane_id * right.lane_id > 0):
-                    add_edge(wp, self.nearest_graph_node(node_index, right),
+                        same_direction_lane_change(wp, right)):
+                    add_edge(wp, nearest_node(node_index, right),
                              "LANE_CHANGE_RIGHT", self.args.lane_change_cost)
         return edge_count

@@ -1,0 +1,77 @@
+﻿<UserControl x:Class="CarlaDashBoard.Wpf.Views.RouteMapView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:CarlaDashBoard.Wpf.ViewModels"
+             xmlns:controls="clr-namespace:CarlaDashBoard.Wpf.Controls"
+             d:DataContext="{d:DesignInstance vm:RouteMapViewModel}"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008/design"
+             mc:Ignorable="d" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+    <Grid Margin="20" Background="{StaticResource BgBrush}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="260"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ===== Map canvas ===== -->
+        <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="0" Margin="0,0,16,0">
+            <Grid>
+                <controls:MapCanvas x:Name="Canvas"
+                                     Graph="{Binding Graph}"
+                                     RoutePolyline="{Binding RoutePolyline}"
+                                     CarPosition="{Binding CarPosition}"
+                                     DestinationPosition="{Binding DestinationPosition}"
+                                     MapClicked="Canvas_MapClicked"/>
+                <TextBlock Text="Chưa có bản đồ — kết nối server rồi bắt đầu phiên."
+                           Style="{StaticResource SoftText}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Visibility="{Binding Graph, Converter={StaticResource NullToVisibility}, ConverterParameter=inverse}"
+                           IsHitTestVisible="False"/>
+                <TextBlock Text="Đang tải bản đồ…" Style="{StaticResource SoftText}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Visibility="{Binding IsLoadingGraph, Converter={StaticResource BoolToVis}}"
+                           IsHitTestVisible="False"/>
+                <TextBlock Text="chạm/click lên đường để đặt đích" Style="{StaticResource SoftText}" FontSize="11"
+                           HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12" IsHitTestVisible="False"/>
+            </Grid>
+        </Border>
+
+        <!-- ===== Right panel ===== -->
+        <Border Grid.Column="1" Style="{StaticResource CardBorder}">
+            <StackPanel>
+                <TextBlock Text="Chọn điểm đến" Style="{StaticResource HeadingText}"/>
+                <Rectangle Height="1" Fill="{StaticResource BorderBrush2}" Margin="0,10,0,14"/>
+
+                <TextBlock Text="📍 Chọn trên bản đồ" Style="{StaticResource SoftText}" FontSize="11" Margin="0,0,0,10"/>
+
+                <TextBlock Text="Spawn point" Style="{StaticResource SoftText}" FontSize="11"/>
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,10">
+                    <ComboBox ItemsSource="{Binding SpawnPoints}" SelectedItem="{Binding SelectedSpawnPoint}" Width="150" Margin="0,0,6,0"/>
+                    <Button Content="Chọn" Command="{Binding SetDestinationFromSpawnPointCommand}"/>
+                </StackPanel>
+
+                <TextBlock Text="Toạ độ x, y" Style="{StaticResource SoftText}" FontSize="11"/>
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,14">
+                    <TextBox Text="{Binding ManualX, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="0,0,6,0"/>
+                    <TextBox Text="{Binding ManualY, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="0,0,6,0"/>
+                    <Button Content="Chọn" Command="{Binding SetDestinationFromCoordinatesCommand}"/>
+                </StackPanel>
+
+                <Rectangle Height="1" Fill="{StaticResource BorderBrush2}" Margin="0,0,0,14"/>
+
+                <TextBlock Text="Thông tin tuyến" Style="{StaticResource HeadingText}" FontSize="14"/>
+                <StackPanel Visibility="{Binding HasRoute, Converter={StaticResource BoolToVis}}" Margin="0,10,0,0">
+                    <TextBlock FontSize="16" FontWeight="SemiBold">
+                        <Run Text="{Binding RouteDistanceM, StringFormat={}{0:0} m, Mode=OneWay}"/>
+                        <Run Text=" · "/>
+                        <Run Text="{Binding RouteEtaS, StringFormat={}~{0:0}s, Mode=OneWay}"/>
+                    </TextBlock>
+                    <Button Content="▶ Bắt đầu lái" Command="{Binding StartDrivingCommand}"
+                            Style="{StaticResource AccentButton}" Margin="0,14,0,0" HorizontalAlignment="Stretch"/>
+                    <TextBlock Text="chuyển mode sang A* Autopilot" Style="{StaticResource SoftText}" FontSize="11" Margin="0,6,0,0"/>
+                </StackPanel>
+
+                <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource SoftText}" FontSize="11"
+                           TextWrapping="Wrap" Margin="0,20,0,0"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

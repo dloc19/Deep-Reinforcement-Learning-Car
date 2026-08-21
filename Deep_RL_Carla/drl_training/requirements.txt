@@ -7,3 +7,7 @@
 numpy>=1.18,<2.0
 opencv-python-headless>=4.5
 torch>=1.9,<=1.13.1   # torch 1.13.1 la ban cuoi chinh thuc ho tro Python 3.7
+
+# Chi can cho plot_metrics.py (ve bieu do cho bao cao) — KHONG can CARLA/torch, co the cai
+# rieng tren mot moi truong/may khac (vd may viet bao cao) neu khong muon cai het file nay:
+matplotlib>=3.3
