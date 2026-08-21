@@ -1,4 +1,6 @@
-"""Dataset column definitions and CARLA 0.9.10 semantic colors."""
+"""Dataset column definitions and the project-wide CARLA semantic label scheme."""
+
+import numpy as np
 
 CSV_FIELDS = [
     "session_id", "episode_id", "sample_id", "frame", "sim_time_s", "delta_seconds",
@@ -39,13 +41,88 @@ CSV_FIELDS = [
 ]
 
 
-CITYSCAPES_COLORS = {
-    0: (0, 0, 0), 1: (70, 70, 70), 2: (100, 40, 40),
-    3: (55, 90, 80), 4: (220, 20, 60), 5: (153, 153, 153),
-    6: (157, 234, 50), 7: (128, 64, 128), 8: (244, 35, 232),
-    9: (107, 142, 35), 10: (0, 0, 142), 11: (102, 102, 156),
-    12: (220, 220, 0),
+# Canonical CARLA 0.9.10 raw semantic tag (0-22) -> the project's 4-class lane-keeping
+# scheme ("lane4" in behavior_cloning/carla_seg.ipynb). This project has three independent
+# consumers of a raw semantic-segmentation frame that each need to fold it down to the same
+# classes: carla_seg.ipynb's `LABEL_LUT`, train_il.ipynb's `SEG_LABEL_LUT`, and
+# drl_training/policy/observation.py's `resize_class_map()` (used both by the DRL env and the
+# Carla Console Bridge Server's IL/DRL Autopilot mode for *live* camera frames). All of them
+# must stay byte-for-byte identical to this table: a training-time class index has to mean
+# the same set of raw tags as whatever the live camera/collector emits, or a checkpoint is
+# being fed a different observation than it was trained on. This dict is the source of truth
+# the other three are copied from (notebooks run on Kaggle and can't import this module, so
+# they carry their own literal copy — check them if you ever change a mapping here).
+#
+# Only four raw tags are named; EVERY other tag - including the sky (raw 0 on CARLA 0.9.10,
+# raw 13 from 0.9.11 on) and vehicles (raw 10) - collapses into Background. Two deliberate
+# choices behind that, both reversals of an earlier 13-class scheme:
+#
+#   Vehicles -> Background. The dataset is collected with no NPC traffic spawned, so raw 10
+#   is ~0% of pixels. An always-empty class still costs a one-hot channel in the IL/DRL
+#   backbone and still drags the reported mIoU down with an IoU of ~0. Obstacle avoidance is
+#   a later step: it needs data collected WITH traffic, at which point add ("Vehicle", [10])
+#   back here AND in both notebooks AND bump drl_training/policy/backbone.py's NUM_CLASSES,
+#   then retrain segmentation -> IL -> DRL together (old checkpoints will not load).
+#
+#   Sky -> Background, NOT ignore_index. The sky is ~26% of every frame; leaving it
+#   unsupervised (the old IGNORE_UNLABELED=True) means the model is free to paint sidewalk
+#   over the top half of the image and no metric ever notices. It answers the same question
+#   as a wall - "not drivable" - so it belongs in Background rather than in a class of its
+#   own that would inflate mIoU with an easy ~0.99.
+SEG_CLASS_NAMES = ["Background", "Road", "RoadLine", "Sidewalk"]
+NUM_SEG_CLASSES = len(SEG_CLASS_NAMES)
+
+RAW_TO_TRAIN_LANE = {
+     6: 2,   # RoadLine
+     7: 1,   # Road
+     8: 3,   # Sidewalk
+    16: 1,   # RailTrack -> Road (tram rails sit flush in the road surface in Town03)
 }
+
+# 256-entry LUT: train_class = RAW_TO_TRAIN_LANE_LUT[raw_tag]. Every unlisted tag - and any
+# tag a future CARLA version might add (> 22) - lands on Background (0) instead of producing
+# an out-of-range class index that would blow up F.one_hot on the model side.
+RAW_TO_TRAIN_LANE_LUT = np.zeros(256, dtype=np.uint8)
+for _raw_id, _train_id in RAW_TO_TRAIN_LANE.items():
+    RAW_TO_TRAIN_LANE_LUT[_raw_id] = _train_id
+del _raw_id, _train_id
+
+
+
+# Classes that are only a few pixels wide and would be DELETED by a plain nearest-neighbour
+# downscale. RoadLine is 2-3 px wide near the car and 1 px near the horizon, yet it is the
+# single most important signal for lane keeping; at 384x480 -> 192x240 a pure INTER_NEAREST
+# resize drops ~31% of its pixels (measured), which means a model fed those masks at
+# inference sees a thinner lane marking than it ever saw during training.
+#
+# Everywhere a class-id map is downscaled - `carla_seg.ipynb`'s `resize_mask_raw`,
+# `train_il.ipynb`'s `downscale_labels`, `drl_training/policy/observation.py`'s
+# `resize_class_map` - the fix is the same: nearest for the bulk, then restore any output
+# cell whose *area coverage* by a thin class exceeds THIN_COVER_THRESH. Keeping the id list
+# and the threshold here means the live DRL/bridge path and the two training notebooks
+# cannot drift apart on it.
+THIN_SEG_CLASS_NAMES = ("RoadLine", "Pedestrian")
+THIN_SEG_CLASS_IDS = tuple(
+    i for i, name in enumerate(SEG_CLASS_NAMES) if name in THIN_SEG_CLASS_NAMES)
+THIN_COVER_THRESH = 0.25
+
+# Preview colors, keyed by REMAPPED training id - same palette as the notebooks' `COLORS`.
+SEG_CLASS_COLORS = {
+    0: (60, 60, 60),      # Background (sky, buildings, vegetation, poles, vehicles, ...)
+    1: (128, 64, 128),    # Road
+    2: (157, 234, 50),    # RoadLine
+    3: (244, 35, 232),    # Sidewalk
+}
+
+# 256 entries so any uint8 class_id indexes safely. Colors come from the REMAPPED training
+# id (via RAW_TO_TRAIN_LANE_LUT), not the raw tag directly, so `seg_color/*.png` always
+# shows the class the model is actually trained to predict for that pixel. The full raw
+# tags are never lost: `seg_label/*.png` stores them unmodified, so a different class
+# scheme can always be re-derived from an already-collected dataset without recollecting.
+SEG_COLOR_LUT = np.zeros((256, 3), dtype=np.uint8)
+for _raw_id in range(256):
+    SEG_COLOR_LUT[_raw_id] = SEG_CLASS_COLORS[int(RAW_TO_TRAIN_LANE_LUT[_raw_id])]
+del _raw_id
 
 
 ROUTE_FIELDS = [

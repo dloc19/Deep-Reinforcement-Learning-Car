@@ -16,16 +16,16 @@
     "width": 480,
     "height": 384,
     "fov": 90.0,
-    "fps": 10.0,
+    "fps": 5.0,
     "camera_x": 1.5,
     "camera_y": 0.0,
     "camera_z": 2.4,
     "camera_pitch": -5.0
   },
   "collection": {
-    "max_samples": 25000,
+    "max_samples": 10000,
     "duration": 0.0,
-    "queue_size": 128,
+    "queue_size": 64,
     "no_event_sensors": false
   },
   "astar": {
@@ -38,5 +38,10 @@
     "goal_x": null,
     "goal_y": null,
     "goal_z": 0.0
+  },
+  "dedup": {
+    "dedup_stationary_speed": 0.3,
+    "dedup_action_eps": 0.02,
+    "dedup_min_interval_s": 1.0
   }
 }

@@ -9,11 +9,15 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+# CARLA 0.9.10 dinh nghia raw semantic tag 0..22 (0.9.11+ them mot vai tag moi).
+MAX_RAW_SEMANTIC_TAG = 22
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("session", help="Thu muc TownXX_YYYYMMDD_HHMMSS")
-    parser.add_argument("--strict", action="store_true", help="Bao loi neu class ID nam ngoai 0..12")
+    parser.add_argument("--strict", action="store_true",
+                        help="Bao loi neu seg_label chua tag ngoai dai raw CARLA 0..22")
     args = parser.parse_args()
 
     root = Path(args.session).resolve()
@@ -72,8 +76,12 @@ def main():
                 label = np.asarray(Image.open(str(label_path)))
                 if label.ndim != 2:
                     errors.append("Dong %d: seg_label khong phai anh 1 kenh" % line_no)
-                elif args.strict and label.max() > 12:
-                    errors.append("Dong %d: semantic class ID lon nhat=%d" % (line_no, label.max()))
+                elif args.strict and label.max() > MAX_RAW_SEMANTIC_TAG:
+                    # seg_label giu RAW tag CARLA (0..22), KHONG phai train id 0..3: viec gop
+                    # ve 4 lop bam lan do phia train lam qua schema.RAW_TO_TRAIN_LANE_LUT.
+                    # Nguong cu la 12 nen moi anh co bau troi/Terrain deu bi bao loi sai.
+                    errors.append("Dong %d: raw semantic tag lon nhat=%d (> %d)"
+                                  % (line_no, label.max(), MAX_RAW_SEMANTIC_TAG))
             if not row.get("waypoint_id"):
                 errors.append("Dong %d: thieu waypoint_id" % line_no)
             for key in ("successor_waypoints_json", "lookahead_waypoints_json"):

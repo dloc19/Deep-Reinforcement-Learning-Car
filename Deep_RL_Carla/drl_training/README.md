@@ -25,7 +25,7 @@ nằm trong observation ở bước này — đúng với tên đồ án "điề
 | | **PPO** (`train_ppo.py`) | **SAC** (`train_sac.py`) |
 |---|---|---|
 | Kiểu | On-policy | Off-policy |
-| Bộ nhớ | Thấp — chỉ giữ 1 rollout (`n_steps=2048` × 480×384 ≈ 377MB) trong RAM, độ phân giải nào cũng rẻ | Cao hơn — replay buffer sống suốt quá trình train (`buffer_capacity=50000` × 480×384 ≈ 9.2GB mặc định, xem `sac/replay_buffer.py`) |
+| Bộ nhớ | Thấp — chỉ giữ 1 rollout (`n_steps=2048` × 240×192 ≈ 90MB) trong RAM, độ phân giải nào cũng rẻ | Cao hơn — replay buffer sống suốt quá trình train (`buffer_capacity=50000` × 240×192 ≈ 2.2GB mặc định, xem `sac/replay_buffer.py`) |
 | Mẫu hiệu quả | Thấp hơn — cần nhiều bước môi trường hơn để hội tụ | Cao hơn — tái sử dụng transition nhiều lần qua replay buffer |
 | Độ ổn định / dễ tune | Cao — clipped surrogate + early-stop theo KL tự bảo vệ | Nhạy hơn với learning rate/tau, nhưng auto temperature-tuning giảm bớt việc chỉnh tay |
 | Khuyến nghị | Máy đơn, CARLA chạy chậm hơn training GPU, muốn kết quả dễ debug trước | Đủ RAM (máy thuê GPU), muốn tận dụng tối đa từng bước môi trường (CARLA step đắt hơn nhiều so với 1 gradient step) |
@@ -33,25 +33,37 @@ nằm trong observation ở bước này — đúng với tên đồ án "điề
 Cả hai đáng đưa vào báo cáo đồ án như một so sánh thực nghiệm (đúng tinh thần "nghiên cứu ứng
 dụng học tăng cường sâu") — cùng warm-start, cùng reward, khác thuật toán fine-tune.
 
-## Độ phân giải camera — vì sao mặc định khớp 480×384
+## Độ phân giải — camera 480×384, observation 240×192
 
-`CarlaLaneKeepEnv` tự spawn camera segmentation **sống** trong lúc train (`width`/`height`
-trong config) — **không** đọc lại dữ liệu đã thu ở `../data_collection/`, nên đổi độ phân
-giải DRL không cần thu thập lại dữ liệu hay train lại segmentation/IL.
+`CarlaLaneKeepEnv` tự spawn camera segmentation **sống** trong lúc train — **không** đọc lại
+dữ liệu đã thu ở `data_collection/`, nên đổi độ phân giải DRL không cần thu thập lại dữ liệu
+hay train lại segmentation/IL. Nhưng ở đây có **hai** con số, không phải một:
 
-`PolicyBackbone` dùng `AdaptiveAvgPool2d((1,1))` nên nạp checkpoint IL vào actor DRL không
-lỗi shape ở bất kỳ độ phân giải nào — nhưng có rủi ro thật nếu hạ độ phân giải quá mạnh: vạch
-kẻ làn (`RoadLine`) chỉ rộng vài pixel, CARLA **render trực tiếp ở độ phân giải cấu hình**
-(không phải downsample từ ảnh lớn), nên ở độ phân giải quá thấp vạch kẻ có thể biến mất khỏi
-mask ở nhiều khung hình — đúng tín hiệu quan trọng nhất cho bài toán bám làn. Reward/điều
-kiện done không bị ảnh hưởng (lấy thẳng từ API waypoint của CARLA, không suy ra từ ảnh), nên
-hậu quả chỉ là giới hạn trần hiệu năng chính sách, không phải lỗi huấn luyện.
+| Tham số | Giá trị | Là gì |
+|---|---|---|
+| `width` / `height` | **480 × 384** | độ phân giải CAMERA render ra, khớp `collector_config.json` |
+| `obs_width` / `obs_height` | **240 × 192** | độ phân giải OBSERVATION đưa vào mạng, sau khi `resize_class_map()` hạ mẫu |
 
-Vì vậy mặc định `width=480, height=384` — khớp **chính xác** độ phân giải notebook IL đã
-train, loại bỏ hoàn toàn nguy cơ lệch phân phối quan sát. Chỉ cân nhắc hạ xuống (vd 240×192)
-nếu thật sự thiếu RAM cho SAC ngay cả sau khi đã giảm `buffer_capacity` — và nên trực quan
-hoá vài khung `seg_label` ở độ phân giải định dùng (giống cell trực quan hoá trong notebook
-segmentation) để xác nhận vạch kẻ làn còn nhìn thấy được trước khi train dài.
+**Vì sao observation phải là 240×192.** Đó chính xác là `IMAGE_WIDTH`/`IMAGE_HEIGHT` mà
+`SteeringNet` đã được train trong `train_il.ipynb`. `PolicyBackbone` dùng
+`AdaptiveAvgPool2d((1,1))` nên **mọi** kích thước đều chạy được và **không có lỗi nào báo** —
+đó chính là cái bẫy: actor warm-start ở 480×384 vẫn chạy ngon lành nhưng nhìn thấy cấu trúc
+lớn gấp 2× so với lúc học, khiến phần warm-start mất giá trị trong im lặng.
+
+**Vì sao camera vẫn giữ 480×384 thay vì render thẳng 240×192.** CARLA render **trực tiếp** ở
+độ phân giải cấu hình, không downsample từ ảnh lớn. Render thẳng ở 240×192 thì vạch kẻ làn
+(1–3 px) biến mất ngay lúc rasterize — không cứu được nữa. Render 480×384 rồi hạ mẫu bằng
+`resize_class_map()` thì vạch được **bảo tồn theo độ phủ diện tích** (giống hệt
+`downscale_labels()` của notebook IL, đã kiểm chứng cho kết quả byte-identical). Đo trên mask
+phối cảnh: nearest thuần chỉ giữ 69% số pixel `RoadLine` so với cách này.
+
+**Lợi thêm về bộ nhớ.** Buffer lưu class-ID map uint8 (one-hot hoá diễn ra trong
+`PolicyBackbone.forward`), nên hạ observation 2× mỗi chiều = giảm **4×** RAM:
+rollout PPO `2048 × 240×192` ≈ 90MB (trước: 377MB); replay SAC `50000 × 240×192` ≈ 2.2GB
+(trước: 9.2GB). `train_sac.py` in ra con số GB thực tế lúc khởi động.
+
+Reward/điều kiện done không bị ảnh hưởng bởi độ phân giải (lấy thẳng từ API waypoint của
+CARLA, không suy ra từ ảnh).
 
 ## Cấu trúc
 
@@ -62,6 +74,8 @@ drl_training/
 ├── csv_logger.py                        # CSV logger nhỏ dùng chung train_ppo.py/train_sac.py
 ├── train_ppo.py / train_sac.py           # entrypoint train — chọn 1 trong 2
 ├── evaluate.py                            # chạy checkpoint đã train (PPO hoặc SAC), đo reward/va chạm/lệch làn
+├── plot_metrics.py                        # vẽ biểu đồ (.png+.pdf) từ episode_log.csv/update_log.csv/eval CSV — dùng cho báo cáo
+├── plot_metrics.ipynb                     # bản notebook của plot_metrics.py — xem inline trong Jupyter trước khi nhúng báo cáo
 ├── policy/
 │   ├── backbone.py           # CNN(seg one-hot)+MLP(scalar) trunk + trunk_head dùng chung — KHỚP KIẾN TRÚC SteeringNet (IL)
 │   ├── il_compat.py          # helper remap checkpoint IL -> state_dict, dùng chung PPO + SAC
@@ -108,7 +122,7 @@ thu hẹp về phạm vi bám làn — giống hệt nhau cho cả PPO và SAC v
   scalar = `[speed_mps, yaw_rate_rps, speed_limit_kmh]` (z-score theo `norm_stats` của
   checkpoint IL) + `[previous_steer, previous_longitudinal]` (raw, đã ∈[-1,1]) +
   one-hot `traffic_light_state` (4 lớp). **Không** có `lane_offset_m`/`heading_error_rad`
-  (chỉ dùng cho reward) — xem lý do trong `../behavior_cloning/train_il_kaggle.ipynb`.
+  (chỉ dùng cho reward) — xem lý do trong `../behavior_cloning/train_il.ipynb`.
 - **Action**: `[steer, longitudinal] ∈ [-1,1]`, `longitudinal≥0`→throttle, `<0`→brake
   (giống hệt cách `../data_collection/carla_collector/writer.py` mã hoá `longitudinal`). SAC
   đạt khoảng này bằng tanh-squash trong `GaussianPolicy.sample`; PPO sample rồi clip (xem
@@ -162,8 +176,8 @@ gradient step; nếu còn dưới ~500MB, giữ `--device cpu` để tránh OOM 
 đổi thời tiết/spawn xe — VRAM CARLA cần có thể tăng đột ngột). Theo dõi `nvidia-smi` (thêm `-l
 2` để lặp mỗi 2s) trong lúc train để phát hiện sớm nếu VRAM tiến sát 4GB.
 
-**`batch_size` cũng ăn VRAM/RAM trực tiếp — độc lập với độ phân giải camera.** Ảnh one-hot 13
-lớp ở 480×384 nặng hơn 160×128 khoảng 9 lần; mặc định trong `ppo_config.json`/`sac_config.json`
+**`batch_size` cũng ăn VRAM/RAM trực tiếp — độc lập với độ phân giải camera.** Ảnh one-hot 4
+lớp ở 240×192 (độ phân giải observation) nặng hơn 160×128 khoảng 2,25 lần; mặc định trong `ppo_config.json`/`sac_config.json`
 đã hạ xuống 64/32 (SAC thấp hơn vì có 2 mạng Q chạy song song) — neo theo đúng `BATCH_SIZE=32`
 notebook IL dùng ổn định ở cùng độ phân giải trên GPU 16GB. Nếu vẫn OOM (kể cả khi đã
 `--device cpu`, lúc đó là RAM chứ không phải VRAM), hạ tiếp qua `--batch-size 16`.
@@ -244,7 +258,33 @@ python evaluate.py --algorithm sac --config sac_config.json ^
 
 In ra reward trung bình, tỷ lệ va chạm, độ lệch làn trung bình theo `|lane_offset_m|` — số
 liệu này dùng để so sánh trực tiếp với MAE của bước IL (mục 11 trong notebook IL) **và giữa
-PPO với SAC**, đưa vào báo cáo đồ án.
+PPO với SAC**, đưa vào báo cáo đồ án. Thêm `--eval-csv-out runs/ppo_lane_keep/eval_results.csv`
+để ghi kết quả từng episode ra CSV — đầu vào cho `plot_metrics.py` bên dưới.
+
+## Vẽ biểu đồ cho báo cáo đồ án
+
+```powershell
+python plot_metrics.py --ppo-dir runs/ppo_lane_keep --sac-dir runs/sac_lane_keep ^
+    --eval-ppo-csv runs/ppo_lane_keep/eval_results.csv ^
+    --eval-sac-csv runs/sac_lane_keep/eval_results.csv ^
+    --il-mae 0.25 --output ./report_figures
+```
+
+Đọc trực tiếp `episode_log.csv`/`update_log.csv` (không cần CARLA/torch, chỉ cần
+`numpy`+`matplotlib` — chạy được trên máy viết báo cáo, khác máy train) và xuất mỗi biểu đồ ở
+2 định dạng (`.png` cho Word, `.pdf` vector cho LaTeX/Overleaf) vào thư mục `--output`: đường
+học reward/độ dài episode, tỉ lệ `terminate_reason` (va chạm/lệch làn/an toàn) theo tiến trình
+train, các đại lượng chẩn đoán riêng PPO (policy/value loss, approx-KL, clip fraction) và SAC
+(critic/actor loss, alpha, mean Q), thông lượng train, và biểu đồ so sánh đánh giá cuối
+(PPO/SAC/IL). Chỉ có 1 thuật toán? Bỏ qua `--sac-dir`/`--eval-sac-csv`, script tự bỏ qua các
+biểu đồ cần cả hai. Cần `pip install matplotlib` nếu môi trường chưa có (đã có sẵn nếu bạn
+cài `requirements.txt` — xem file đó).
+
+**Muốn xem từng biểu đồ inline trước khi nhúng vào báo cáo** (thay vì chạy CLI rồi mở file
+ảnh riêng)? Mở `plot_metrics.ipynb` trong Jupyter (từ thư mục `drl_training/`), sửa các
+đường dẫn ở cell "Cấu hình", rồi Run All — notebook gọi lại đúng các hàm vẽ trong
+`plot_metrics.py` (không lặp lại logic), mỗi cell hiện 1 nhóm biểu đồ và vẫn lưu ra
+`.png`/`.pdf` như CLI.
 
 ## Giới hạn đã biết / hướng mở rộng
 
@@ -254,14 +294,14 @@ PPO với SAC**, đưa vào báo cáo đồ án.
   `train_ppo.py`/`train_sac.py` thành vòng lặp nhiều `CarlaLaneKeepEnv` (mã hiện tại được
   viết theo hướng dễ mở rộng: mọi state đều local trong instance `CarlaLaneKeepEnv`, không
   có biến toàn cục).
-- **`sac/replay_buffer.py`'s bộ nhớ**: RAM ≈ `buffer_capacity × width × height` byte (uint8,
+- **`sac/replay_buffer.py`'s bộ nhớ**: RAM ≈ `buffer_capacity × obs_width × obs_height` byte (uint8,
   1 kênh, không one-hot — one-hot hoá diễn ra trong `PolicyBackbone.forward`, ngay trước
   conv; chỉ tốn RAM host, không tốn VRAM vì chỉ 1 batch nhỏ được chuyển lên GPU mỗi lần
-  update). Mặc định `width=480, height=384` (khớp đúng độ phân giải IL đã train — xem mục
-  "Độ phân giải" bên dưới) + `buffer_capacity=50000` ≈ 9.2GB, nhắm tới máy thuê GPU có
-  ≥32GB RAM. Đang smoke-test trên máy cá nhân RAM nhỏ hơn? Hạ tạm bằng
-  `--buffer-capacity 15000` (≈2.7GB) — không cần sửa file JSON. `train_sac.py` tự in ước
-  lượng GB thực tế lúc khởi động, dựa trên `width`/`height`/`buffer_capacity` hiện tại.
+  update). Mặc định `obs_width=240, obs_height=192` (khớp đúng độ phân giải IL đã train —
+  xem mục "Độ phân giải" bên trên) + `buffer_capacity=50000` ≈ 2.2GB, vừa với máy 16GB RAM.
+  Đang smoke-test trên máy RAM nhỏ hơn nữa? Hạ tạm bằng `--buffer-capacity 15000` (≈0.7GB)
+  — không cần sửa file JSON. `train_sac.py` tự in ước lượng GB thực tế lúc khởi động, dựa
+  trên `obs_width`/`obs_height`/`buffer_capacity` hiện tại.
 - **Chưa có A*/route** — khi `../router_plan/Global_Route_Planner.py` được cài, thêm
   `route_target_local_x/y` + one-hot `route_command` vào `ObservationContract` và
   `CarlaLaneKeepEnv._build_state`, rồi train lại IL với các cột này trước khi warm-start DRL

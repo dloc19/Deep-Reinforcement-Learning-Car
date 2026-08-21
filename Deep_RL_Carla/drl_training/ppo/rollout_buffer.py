@@ -1,7 +1,7 @@
 """Fixed-size on-policy rollout buffer with GAE(lambda) advantage estimation.
 
 Stores the segmentation observation as a raw (H, W) uint8 class-ID map — NOT one-hot — to
-keep memory bounded: one-hot at `num_classes=13` would be 13x the memory for no benefit,
+keep memory bounded: one-hot would cost `num_classes`x the memory for no benefit,
 since `PolicyBackbone.forward` one-hot-encodes on the GPU right before the conv stack (see
 `policy/backbone.py`). This is the whole reason PPO (on-policy, buffer sized ~n_steps) was
 chosen over an off-policy method here: even at 1 byte/pixel, an off-policy replay buffer

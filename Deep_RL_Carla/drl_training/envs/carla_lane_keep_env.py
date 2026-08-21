@@ -29,7 +29,6 @@ for _path in (str(_DRL_TRAINING_DIR), str(_DATA_COLLECTION_DIR)):
 
 try:
     from carla_collector.events import EventCounters
-    from carla_collector.geometry import magnitude, normalize_angle
 except ImportError as exc:
     raise ImportError(
         "Khong import duoc carla_collector tu '%s'. Dam bao thu muc 'data_collection' van "
@@ -37,7 +36,7 @@ except ImportError as exc:
         _DATA_COLLECTION_DIR
     ) from exc
 
-from policy.observation import resize_class_map
+from policy.observation import build_vehicle_state, resize_class_map
 
 try:
     import carla
@@ -46,22 +45,6 @@ except ImportError as exc:
         "Khong import duoc module 'carla'. Cai CARLA 0.9.10 Python API truoc khi chay "
         "module DRL (xem docs/manual_thu_thap_du_lieu.md muc 2)."
     ) from exc
-
-
-_TRAFFIC_LIGHT_MAP = None  # built lazily — needs `carla` already imported
-
-
-def _traffic_light_label(vehicle):
-    global _TRAFFIC_LIGHT_MAP
-    if not vehicle.is_at_traffic_light():
-        return "unknown"
-    if _TRAFFIC_LIGHT_MAP is None:
-        _TRAFFIC_LIGHT_MAP = {
-            carla.TrafficLightState.Red: "red",
-            carla.TrafficLightState.Yellow: "yellow",
-            carla.TrafficLightState.Green: "green",
-        }
-    return _TRAFFIC_LIGHT_MAP.get(vehicle.get_traffic_light_state(), "unknown")
 
 
 class CarlaLaneKeepEnv(object):
@@ -248,48 +231,21 @@ class CarlaLaneKeepEnv(object):
                 "giu synchronous_mode." % timeout)
 
     def _build_state(self, seg):
-        transform = self.vehicle.get_transform()
-        location = transform.location
-        velocity = self.vehicle.get_velocity()
-        angular = self.vehicle.get_angular_velocity()
-        yaw = np.radians(transform.rotation.yaw)
-        forward_speed = velocity.x * np.cos(yaw) + velocity.y * np.sin(yaw)
-
-        waypoint = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving)
-        if waypoint is None:
-            lane_offset, heading_error, off_lane = 0.0, 0.0, 1
-        else:
-            wp_tf = waypoint.transform
-            dx = location.x - wp_tf.location.x
-            dy = location.y - wp_tf.location.y
-            wp_yaw = np.radians(wp_tf.rotation.yaw)
-            lane_offset = dx * (-np.sin(wp_yaw)) + dy * np.cos(wp_yaw)
-            half_width = max(float(waypoint.lane_width) * 0.5, 1e-6)
-            off_lane = int(abs(lane_offset) > half_width)
-            heading_error = np.radians(normalize_angle(transform.rotation.yaw - wp_tf.rotation.yaw))
+        state = build_vehicle_state(
+            self.vehicle, self.map, seg, self.previous_steer, self.previous_longitudinal)
 
         collisions, lane_invasions = self.events.snapshot()
         new_collision = collisions > self.previous_collisions
         new_lane_invasions = max(0, lane_invasions - self.previous_lane_invasions)
         self.previous_collisions, self.previous_lane_invasions = collisions, lane_invasions
 
-        return {
-            "seg": seg,
-            "speed_mps": magnitude(velocity),
-            "forward_speed_mps": float(forward_speed),
-            "yaw_rate_rps": float(np.radians(angular.z)),
-            "previous_steer": self.previous_steer,
-            "previous_longitudinal": self.previous_longitudinal,
-            "speed_limit_kmh": self.vehicle.get_speed_limit(),
-            "traffic_light_state": _traffic_light_label(self.vehicle),
-            "lane_offset_m": float(lane_offset),
-            "heading_error_rad": float(heading_error),
-            "off_lane": off_lane,
+        state.update({
             "collisions": collisions,
             "lane_invasions": lane_invasions,
             "new_collision": bool(new_collision),
             "new_lane_invasions": int(new_lane_invasions),
-        }
+        })
+        return state
 
     def _compute_reward(self, state, steer, longitudinal):
         cfg = self.cfg
@@ -329,6 +285,15 @@ class CarlaLaneKeepEnv(object):
         return float(reward), terminated, info
 
     def _make_observation(self, state):
+        # Camera chay o 480x384 (khop collector, de dung chung mot ham voi duong
+        # camera that sau nay), nhung OBSERVATION ha xuong 240x192 = dung do phan
+        # giai `IMAGE_WIDTH`/`IMAGE_HEIGHT` ma train_il.ipynb da train. Hai ly do:
+        #   1. Actor warm-start tu IL nhin thay dung thang do dac trung no da hoc.
+        #      AdaptiveAvgPool2d khien moi kich thuoc deu CHAY duoc nen sai lech nay
+        #      khong bao loi gi - no chi lam warm-start kem hieu qua trong im lang.
+        #   2. Giam 4x bo nho rollout/replay (SAC 50k: 9.2GB -> 2.3GB).
+        # resize_class_map() bao ton class manh (RoadLine) giong het downscale_labels()
+        # cua notebook IL - xem docstring cua no.
         seg = resize_class_map(
             state["seg"],
             self.cfg.get("obs_height", self.cfg.get("height", 128)),

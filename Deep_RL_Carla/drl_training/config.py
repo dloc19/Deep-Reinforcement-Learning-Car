@@ -19,7 +19,14 @@ COMMON_DEFAULTS = {
     # connection
     "host": "127.0.0.1", "port": 2000, "timeout": 20.0,
     # camera / env
-    "width": 160, "height": 128, "fov": 90.0, "fps": 10.0,
+    # width/height  = do phan giai CAMERA segmentation (khop collector: 480x384).
+    # obs_width/obs_height = do phan giai OBSERVATION dua vao mang, sau khi
+    #   resize_class_map() ha mau. Phai khop IMAGE_WIDTH/IMAGE_HEIGHT cua
+    #   train_il.ipynb (240x192) thi actor warm-start moi nhin thay dung thang do
+    #   dac trung nhu luc train IL. Ha o day cung giam 4x bo nho rollout/replay
+    #   (SAC 50k transition: 9.2GB o 480x384 -> 2.2GB o 240x192).
+    "width": 480, "height": 384, "obs_width": 240, "obs_height": 192,
+    "fov": 90.0, "fps": 10.0,
     "camera_x": 1.5, "camera_y": 0.0, "camera_z": 2.4, "camera_pitch": -5.0,
     "vehicle_filter": "vehicle.lincoln.mkz2017",
     "max_episode_steps": 1000, "off_lane_patience_steps": 20,
@@ -94,11 +101,17 @@ def load_config(algorithm, argv=None):
     parser.add_argument("--buffer-capacity", type=int, default=None,
                          help="[train_sac.py] so transition toi da trong replay buffer — "
                               "giam gia tri nay truoc tien neu thieu RAM (xem README.md)")
-    parser.add_argument("--width", type=int, default=None, help="Do rong camera/observation (px)")
-    parser.add_argument("--height", type=int, default=None, help="Do cao camera/observation (px)")
+    parser.add_argument("--width", type=int, default=None,
+                        help="Do rong CAMERA segmentation (px) — khong phai observation")
+    parser.add_argument("--height", type=int, default=None,
+                        help="Do cao CAMERA segmentation (px) — khong phai observation")
+    parser.add_argument("--obs-width", type=int, default=None,
+                        help="Do rong OBSERVATION dua vao mang (mac dinh 240 = khop IL)")
+    parser.add_argument("--obs-height", type=int, default=None,
+                        help="Do cao OBSERVATION dua vao mang (mac dinh 192 = khop IL)")
     parser.add_argument("--batch-size", type=int, default=None,
                          help="Kich thuoc minibatch update — dat truc tiep VRAM can dung "
-                              "(anh one-hot 13 lop o 480x384 nang hon nhieu 160x128, giam "
+                              "(anh one-hot 4 lop o 240x192 nang hon nhieu 160x128, giam "
                               "gia tri nay truoc tien neu OOM, xem README.md)")
     parser.add_argument("--device", default=None, choices=["cuda", "cpu"])
     parser.add_argument("--episodes", type=int, default=None, help="[evaluate.py] so episode danh gia")
@@ -106,6 +119,9 @@ def load_config(algorithm, argv=None):
                          help="[evaluate.py] dung mean action thay vi sample (tat exploration)")
     parser.add_argument("--algorithm", default=None, choices=["ppo", "sac"],
                          help="[evaluate.py] thuat toan cua checkpoint --resume")
+    parser.add_argument("--eval-csv-out", default=None,
+                         help="[evaluate.py] neu dat, ghi ket qua tung episode ra file CSV nay "
+                              "(vd runs/ppo_lane_keep/eval_results.csv) de plot_metrics.py doc lai")
     args = parser.parse_args(argv)
 
     config = dict(COMMON_DEFAULTS)
@@ -116,7 +132,8 @@ def load_config(algorithm, argv=None):
             config.update(_flatten(json.load(handle)))
 
     for key in ("host", "port", "il_checkpoint", "output", "total_steps", "n_steps",
-                "buffer_capacity", "width", "height", "batch_size", "device"):
+                "buffer_capacity", "width", "height", "obs_width", "obs_height",
+                "batch_size", "device"):
         value = getattr(args, key, None)
         if value is not None:
             config[key] = value
@@ -127,4 +144,5 @@ def load_config(algorithm, argv=None):
     config["_episodes"] = args.episodes
     config["_deterministic"] = args.deterministic
     config["_algorithm"] = args.algorithm or algorithm
+    config["_eval_csv_out"] = args.eval_csv_out
     return config

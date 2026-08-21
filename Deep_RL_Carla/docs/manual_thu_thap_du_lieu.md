@@ -211,23 +211,27 @@ Data_Collection/
 |---|---|---|
 | `image_mode` | `"seg-only"` | `seg-only`: chỉ semantic; `seg-rgb`: thêm RGB |
 | `save_seg_color` | `true` | Lưu thêm ảnh semantic màu 3 kênh |
-| `width` | `192` | Chiều rộng ảnh (pixel) |
-| `height` | `108` | Chiều cao ảnh (pixel) |
+| `width` | `480` | Chiều rộng ảnh (pixel) |
+| `height` | `384` | Chiều cao ảnh (pixel) |
 | `fov` | `90.0` | Field of View theo chiều ngang (độ) |
-| `fps` | `10.0` | Tần suất chụp ảnh (frame/giây) |
+| `fps` | `5.0` | Tần suất chụp ảnh (frame/giây) — **hợp đồng** `CONTROL_DT = 0.2 s` với IL/DRL |
 | `camera_x` | `1.5` | Vị trí camera trước/sau xe (m) |
 | `camera_y` | `0.0` | Vị trí camera trái/phải xe (m) |
 | `camera_z` | `2.4` | Chiều cao camera (m) |
 | `camera_pitch` | `-5.0` | Góc nghiêng camera xuống (độ âm = nhìn xuống) |
 
-> [!TIP]
-> Tham số `width: 192, height: 108` trong config là resolution nhỏ để tiết kiệm dung lượng. Để huấn luyện CNN tốt hơn, nên nâng lên `800x450` (xem [Tham số tham khảo](#11-tham-số-tham-khảo)).
+> [!IMPORTANT]
+> `480x384 @ 5 FPS` là độ phân giải và bước thời gian của bộ dữ liệu đang dùng — cả
+> `collector_config.json` lẫn mặc định CLI của `config.py` đều đã đặt đúng hai giá trị
+> này. Đổi độ phân giải nghĩa là phải train lại segmentation + IL (notebook seg train ở
+> 384×480 và sẽ phóng to ảnh nhỏ hơn thế); đổi FPS còn nặng hơn vì `previous_steer`
+> mang nghĩa "lệnh của 1 bước trước" — xem mục 9.1.
 
 #### Nhóm `collection` — Điều kiện dừng
 
 | Tham số | Mặc định | Ý nghĩa |
 |---|---|---|
-| `max_samples` | `50000` | Tự dừng khi ghi đủ N mẫu; `0` = không giới hạn |
+| `max_samples` | `10000` | Tự dừng khi ghi đủ N mẫu; `0` = không giới hạn (10.000/map × 5 map = 40k train + 10k val) |
 | `duration` | `0.0` | Tự dừng sau N giây thực tế; `0` = không giới hạn |
 | `queue_size` | `64` | Kích thước hàng đợi nội bộ giữa camera và writer |
 | `no_event_sensors` | `false` | `true` = không spawn sensor va chạm/vượt làn |
@@ -442,11 +446,11 @@ D:\CARLA_DATA\
     ├── summary.json                   ← thống kê sau khi dừng
     ├── states.csv                     ← dữ liệu số cho tất cả frame
     ├── seg_label/
-    │   ├── 00001234.png               ← ảnh 1 kênh, giá trị = class ID (0..12)
+    │   ├── 00001234.png               ← ảnh 1 kênh, giá trị = raw tag CARLA (0..22)
     │   ├── 00001235.png
     │   └── ...
     ├── seg_color/                     ← chỉ khi save_seg_color=true
-    │   ├── 00001234.png               ← ảnh 3 kênh màu theo bảng Cityscapes
+    │   ├── 00001234.png               ← ảnh 3 kênh màu, đã gộp về 4 lớp bám làn
     │   └── ...
     └── rgb/                           ← chỉ khi image_mode=seg-rgb
         ├── 00001234.png
@@ -702,7 +706,9 @@ python verify_dataset.py D:\CARLA_DATA\Town01_20260715_230000_123456 --strict
 5. File ảnh `seg_label` tồn tại và khớp với CSV
 6. File `rgb` và `seg_color` tồn tại (nếu có đường dẫn)
 7. Ảnh `seg_label` là 1 kênh (grayscale)
-8. Class ID trong phạm vi [0, 12] (khi `--strict`)
+8. Raw semantic tag trong phạm vi [0, 22] (khi `--strict`) — `seg_label` giữ raw tag
+   CARLA, việc gộp về 4 lớp bám làn do phía train làm qua
+   `schema.RAW_TO_TRAIN_LANE_LUT`
 9. `waypoint_id` không rỗng
 10. `successor_waypoints_json` và `lookahead_waypoints_json` là JSON list hợp lệ
 
@@ -752,7 +758,7 @@ D:\CARLA_DATA\
 **Observation đầu vào:**
 ```python
 observation = {
-    "image": seg_label,          # one-hot 13 lớp hoặc seg_color 3 kênh
+    "image": seg_label,          # raw tag 0-22 -> remap 4 lớp -> one-hot 4 kênh
     "speed_mps": ...,
     "yaw_rate_rps": ...,
     "previous_steer": ...,
@@ -766,7 +772,7 @@ action = [steer, longitudinal]   # longitudinal = throttle - brake
 ```
 
 > [!WARNING]
-> **Không** đưa class ID của `seg_label` vào CNN như cường độ xám có thứ tự — class ID là nhãn rời rạc, không có mối quan hệ thứ tự số học. Hãy one-hot 13 lớp, dùng embedding, hoặc gom thành các nhóm semantic.
+> **Không** đưa class ID của `seg_label` vào CNN như cường độ xám có thứ tự — class ID là nhãn rời rạc, không có mối quan hệ thứ tự số học. Hãy one-hot theo số lớp sau khi remap (`schema.RAW_TO_TRAIN_LANE_LUT`: 4 lớp `Background, Road, RoadLine, Sidewalk`), dùng embedding, hoặc gom thành các nhóm semantic.
 
 ### 9.2 Fine-tune DRL
 

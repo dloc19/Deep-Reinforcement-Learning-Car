@@ -1,5 +1,5 @@
 """Load and validate an IL checkpoint produced by
-`behavior_cloning/train_il_kaggle.ipynb`.
+`behavior_cloning/train_il.ipynb`.
 """
 
 import torch

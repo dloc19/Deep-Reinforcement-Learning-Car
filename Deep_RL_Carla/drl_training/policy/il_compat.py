@@ -1,7 +1,7 @@
 """Generic IL-checkpoint -> DRL-module state_dict remapping, shared by PPO's
 `GaussianActor` and SAC's `GaussianPolicy` (see `policy/actor_critic.py` / `sac/networks.py`).
 
-IL's `SteeringNet` (in `behavior_cloning/train_il_kaggle.ipynb`) has:
+IL's `SteeringNet` (in `behavior_cloning/train_il.ipynb`) has:
     conv.*, pool (no params), cnn_fc.*, scalar_mlp.*      -> the shared backbone
     head.0 (Linear 96->64), head.3 (Linear 64->32)          -> the shared "trunk head"
     head.6 (Linear 32->2, tanh applied outside the Sequential) -> the final action layer

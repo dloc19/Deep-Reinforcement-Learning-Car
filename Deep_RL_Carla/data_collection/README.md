@@ -1,6 +1,6 @@
 # Pipeline thu thập dữ liệu CARLA 0.9.10
 
-Pipeline này **không spawn xe, không bật autopilot và không đổi map**. Nó là một client thụ động: tìm chiếc xe `hero` đã được `automatic_control.py` tạo, gắn semantic camera và ghi dữ liệu theo cùng `frame` của CARLA. Mặc định `seg-only` không spawn camera RGB để giảm tải GPU và dung lượng.
+Pipeline này **không spawn xe, không bật autopilot và không đổi map**. Nó là một client thụ động: tìm chiếc xe `hero` đã được `automatic_control.py` tạo, gắn semantic camera và ghi dữ liệu theo cùng `frame` của CARLA. Mặc định CLI (`seg-only`) không spawn camera RGB để giảm tải GPU và dung lượng; `collector_config.json` dùng để thu dữ liệu thật lại đặt `seg-rgb`, spawn thêm camera RGB để lưu đối chiếu.
 
 ## Cấu trúc source code theo module
 
@@ -41,39 +41,80 @@ Không cần sửa `collect_data.py` trừ khi muốn đổi cách khởi độn
 
 ## Chạy bằng file cấu hình
 
-File `collector_config.json` mặc định lưu đồng thời `seg_label` và `seg_color`,
-thu đúng **25.000 mẫu hợp lệ mỗi map** rồi tự dừng. Collector vẫn chỉ spawn một
-semantic camera, không spawn RGB camera. Ở 10 FPS, thời gian lý thuyết khoảng
-41 phút 40 giây/map. Bốn map sẽ cho khoảng 100.000 mẫu trước khi lọc.
+File `collector_config.json` mặc định lưu đồng thời `rgb`, `seg_label` và
+`seg_color` (vì `image_mode: seg-rgb` và `save_seg_color: true`), ở độ phân giải
+480×384, thu đúng **10.000 mẫu hợp lệ mỗi map** rồi tự dừng. Collector spawn cả
+semantic camera lẫn RGB camera trong chế độ này. Ở 5 FPS, thời gian lý thuyết
+khoảng 33 phút 20 giây/map. Town01–04 cho 40.000 mẫu train, Town05 cho 10.000 mẫu
+val — đúng con số `EXPECT_TRAIN`/`EXPECT_VAL` mà hai notebook train kiểm tra.
+
+> **5 FPS là hợp đồng, không phải tuỳ chọn hiệu năng.** `CONTROL_DT = 1/5 = 0.2 s`;
+> `previous_steer` nghĩa là "lệnh điều khiển của 1 bước trước", nên đổi FPS là đổi ý
+> nghĩa của chính đặc trưng đó. Ở 20 FPS vô-lăng gần như không kịp đổi trong 50 ms →
+> `previous_steer ≈ steer` và model IL đạt loss thấp bằng cách chép lại nó, bỏ qua
+> hoàn toàn ảnh segmentation (copycat/causal confusion — không hiện ra trong val loss).
+> Khi train DRL, đặt `fixed_delta_seconds` của CARLA đúng bằng 0.2 s.
 Graph A* mặc định chưa được xuất vì A* là giai đoạn mở rộng sau IL và DRL.
 
-Những dòng thường cần chỉnh:
+Nội dung `collector_config.json` hiện tại:
 
 ```json
 {
+  "connection": {
+    "host": "127.0.0.1",
+    "port": 2000,
+    "timeout": 30.0,
+    "role_name": "hero",
+    "vehicle_id": 0,
+    "wait_vehicle_timeout": 120.0
+  },
   "dataset": {
     "output": "D:/CARLA_DATA"
   },
   "camera": {
-    "image_mode": "seg-only",
+    "image_mode": "seg-rgb",
     "save_seg_color": true,
-    "width": 800,
-    "height": 450,
-    "fps": 10.0
+    "width": 480,
+    "height": 384,
+    "fov": 90.0,
+    "fps": 5.0,
+    "camera_x": 1.5,
+    "camera_y": 0.0,
+    "camera_z": 2.4,
+    "camera_pitch": -5.0
   },
   "collection": {
-    "max_samples": 25000,
-    "duration": 0.0
+    "max_samples": 10000,
+    "duration": 0.0,
+    "queue_size": 64,
+    "no_event_sensors": false
   },
   "astar": {
-    "no_map_export": true
+    "lookahead_m": 5.0,
+    "route_lookaheads": "5,10,20,30",
+    "graph_resolution": 2.0,
+    "lane_change_cost": 3.0,
+    "no_map_export": true,
+    "goal_spawn_index": -1,
+    "goal_x": null,
+    "goal_y": null,
+    "goal_z": 0.0
   }
 }
 ```
 
+Những dòng thường cần chỉnh: `dataset.output` (ổ đĩa/thư mục lưu), `camera.image_mode`
+và `camera.save_seg_color` (đổi luồng ảnh lưu ra), `camera.width/height/fps`,
+`collection.max_samples`/`duration` (điều kiện dừng) và `astar.no_map_export`
+(bật khi bắt đầu giai đoạn A*). Mục `dedup` lọc bớt các mẫu trùng lặp ngay lúc thu
+(xem mục "Giảm trùng lặp / mất cân bằng dữ liệu" bên dưới).
+
 - `max_samples > 0`: tự dừng khi đã ghi đủ số mẫu đồng bộ.
 - `duration > 0`: tự dừng theo số giây thực tế.
 - Nếu cả hai lớn hơn 0, điều kiện nào đạt trước sẽ dừng trước.
+- `collection.queue_size = 128`: hàng đợi packet giữa sensor callback và writer
+  thread; tăng giá trị này nếu log báo `dropped` tăng do writer (ghi PNG/CSV)
+  theo không kịp tốc độ camera.
 - JSON không hỗ trợ comment; không chèn dòng bắt đầu bằng `#` hoặc `//`.
 
 Chạy từ Anaconda Prompt/PowerShell đã cài CARLA Python API:
@@ -104,16 +145,48 @@ Giữ CARLA server mở trong toàn bộ quá trình. Với mỗi map, thực hi
 2. Đợi map tải xong.
 3. Terminal A: chạy automatic_control.py, đợi hero bắt đầu chạy.
 4. Terminal B: chạy run_collector.bat.
-5. Đủ 25.000 mẫu, collector tự cleanup sensor và dừng.
-6. Kiểm tra session bằng verify_dataset.py.
-7. Dừng automatic_control.py bằng Ctrl+C.
-8. Notebook: chạy cell client.load_world("Town02").
-9. Chạy lại automatic_control.py để tạo hero mới.
-10. Chạy lại run_collector.bat với cùng config.
+5. Đủ 10.000 mẫu, collector tự cleanup sensor và dừng.
+6. Kiểm tra session bằng verify_dataset.py --strict.
+7. Sinh il_fields.csv / drl_fields.csv bằng split_csv.py  <-- BẮT BUỘC
+8. Dừng automatic_control.py bằng Ctrl+C.
+9. Notebook: chạy cell client.load_world("Town02").
+10. Chạy lại automatic_control.py để tạo hero mới.
+11. Chạy lại run_collector.bat với cùng config.
 ```
 
-Tiếp tục tương tự với Town03 và Town04. Không chạy cell đổi map khi collector còn
-hoạt động, vì `client.load_world()` hủy world và toàn bộ actor/sensor của map cũ.
+Tiếp tục tương tự với Town03, Town04 và **Town05** (Town05 là tập validation của cả
+hai notebook train — thiếu nó thì không train được). Không chạy cell đổi map khi
+collector còn hoạt động, vì `client.load_world()` hủy world và toàn bộ actor/sensor
+của map cũ.
+
+**Bước 6–7 cho mỗi session vừa thu xong:**
+
+```powershell
+python verify_dataset.py D:\CARLA_DATA\Town01_<timestamp> --strict
+python ..\data_analysis\split_csv.py D:\CARLA_DATA\Town01_<timestamp>
+```
+
+`collect_data.py` **chỉ** ghi `states.csv`; `train_il.ipynb` đọc `il_fields.csv` trong
+từng thư mục Town, và file đó do `split_csv.py` sinh ra. Bỏ qua bước này thì notebook IL
+sẽ dừng ngay ở mục 3 với `FileNotFoundError: il_fields.csv`. Notebook segmentation không
+cần file này (nó đọc thẳng `rgb/` + `seg_label/`).
+
+Sau khi xong cả 5 map, thư mục upload lên Kaggle phải có dạng — tên `CARLA_DATA` là thứ
+`resolve_dataset_root()` của cả hai notebook dò tìm:
+
+```text
+CARLA_DATA/
+├── Town01_<timestamp>/   rgb/  seg_label/  seg_color/  states.csv  il_fields.csv  ...
+├── Town02_<timestamp>/
+├── Town03_<timestamp>/
+├── Town04_<timestamp>/
+└── Town05_<timestamp>/   ← validation
+```
+
+> Nếu dung lượng chạm hạn ngạch 20 GB của Kaggle: `seg_color` chỉ là ảnh xem trước, không
+> notebook nào đọc nó. Đặt `"save_seg_color": false` trong `collector_config.json` để bỏ
+> hẳn luồng ảnh này. **Không** bỏ `rgb` (notebook segmentation train RGB → mask) và không
+> bỏ `seg_label` (nhãn của cả hai notebook).
 
 Cell notebook nên viết như sau để nhìn rõ map hiện tại:
 
@@ -145,10 +218,13 @@ dataset/
 ```
 
 - `rgb`: ảnh RGB tùy chọn để đối chiếu.
-- `seg_label`: ảnh một kênh, mỗi pixel là semantic class ID `0..12`; đây là input
-  tiết kiệm dung lượng và tính toán nhất.
-- `seg_color`: ảnh semantic ba kênh theo bảng màu cố định; có thể dùng để train
-  backbone CNN hoặc dùng kiểm tra trực quan. Không được dùng ColorJitter/hue/saturation.
+- `seg_label`: ảnh một kênh, mỗi pixel là **raw semantic tag CARLA `0..22`** (giữ
+  nguyên, không remap) — đây là input tiết kiệm dung lượng và tính toán nhất, và giữ
+  raw tag nghĩa là đổi label scheme sau này không cần thu thập lại.
+- `seg_color`: ảnh semantic ba kênh, **đã gộp sẵn về 4 lớp bám làn** theo
+  `schema.SEG_CLASS_COLORS` (Background xám / Road tím / RoadLine vàng-xanh /
+  Sidewalk hồng) — dùng để kiểm tra trực quan xem model sẽ *nhìn thấy* gì. Không được
+  dùng ColorJitter/hue/saturation.
 - `states.csv`: mỗi dòng khớp đúng một bộ ảnh qua cột `frame`.
 - `metadata.json`: map, xe, thời tiết, cấu hình camera, camera intrinsics và thông tin graph.
 - Khi bật `--map-export`, session có thêm `map.xodr`, `spawn_points.csv`,
@@ -199,9 +275,15 @@ longitudinal = throttle - brake
 action = [steer, longitudinal]
 ```
 
-Không đưa class ID của `seg_label` vào CNN như cường độ xám có thứ tự. Hãy one-hot
-13 lớp, dùng embedding, hoặc gom thành các nhóm semantic. Nếu dùng `seg_color`,
-giữ nguyên bảng màu và chuẩn hóa ba kênh nhất quán.
+`seg_label` lưu **raw tag CARLA 0–22**. Pipeline train gộp chúng về 4 lớp bám làn
+(`Background, Road, RoadLine, Sidewalk`) bằng `schema.RAW_TO_TRAIN_LANE_LUT` — bảng này
+là nguồn sự thật duy nhất, hai notebook và `drl_training/policy/observation.py` đều
+phải khớp byte-for-byte với nó. Giữ raw tag trong file nghĩa là đổi scheme sau này
+không phải thu thập lại dữ liệu.
+
+Không đưa class ID vào CNN như cường độ xám có thứ tự. Hãy one-hot theo số lớp sau
+khi remap, dùng embedding, hoặc gom thành các nhóm semantic. Nếu dùng `seg_color`
+(đã được gộp sẵn về 4 lớp), giữ nguyên bảng màu và chuẩn hóa ba kênh nhất quán.
 
 Fine-tune DRL online không cần reward lưu trong tập imitation. `CarlaEnv.step()`
 sau này tính reward từ tốc độ tiến, lane offset, heading error, steer delta,
@@ -259,15 +341,19 @@ python automatic_control.py --host 127.0.0.1 --port 2000
 
 ```powershell
 cd <thu_muc_pipeline>
-python collect_data.py --output D:\CARLA_DATA --image-mode seg-only --fps 10 --width 800 --height 450
+python collect_data.py --output D:\CARLA_DATA --image-mode seg-only
 ```
 
-Đây là lệnh tối giản: chỉ một semantic camera và class-mask PNG một kênh. Cấu hình
-JSON mặc định còn bật `save_seg_color=true`, nên khi chạy bằng `run_collector.bat`
-sẽ lưu đồng thời label một kênh và ảnh semantic màu. Nếu cần thêm RGB để đối chiếu:
+Đây là lệnh tối giản dùng tham số CLI mặc định (`config.py`: 480×384 @ 5 FPS, giống
+`collector_config.json`): chỉ một semantic camera và class-mask PNG một kênh, không
+lưu RGB/seg_color. Khi chạy bằng
+`run_collector.bat` (tức dùng `collector_config.json`), collector spawn thêm RGB
+camera và lưu đồng thời cả ba luồng ảnh (`rgb`, `seg_label`, `seg_color`) ở độ
+phân giải 480×384, vì file cấu hình đặt `image_mode: seg-rgb` và
+`save_seg_color: true`. Muốn chạy trực tiếp bằng CLI với đúng các luồng ảnh đó:
 
 ```powershell
-python collect_data.py --output D:\CARLA_DATA --image-mode seg-rgb --save-seg-color
+python collect_data.py --output D:\CARLA_DATA --image-mode seg-rgb --save-seg-color --width 480 --height 384
 ```
 
 Trong giai đoạn IL/DRL hiện tại, `collector_config.json` đặt
@@ -302,13 +388,13 @@ Nhấn `Ctrl+C` để dừng. Collector chỉ hủy các sensor do chính nó t�
 Chạy thử 60 giây:
 
 ```powershell
-python collect_data.py --output D:\CARLA_DATA --duration 60 --fps 10
+python collect_data.py --output D:\CARLA_DATA --duration 60
 ```
 
 Thu đúng 5.000 mẫu:
 
 ```powershell
-python collect_data.py --output D:\CARLA_DATA --max-samples 5000 --fps 10
+python collect_data.py --output D:\CARLA_DATA --max-samples 5000
 ```
 
 Nếu không tìm thấy xe `hero`, lấy actor ID hoặc dùng role khác:
@@ -335,6 +421,91 @@ python collect_data.py --role-name ego_vehicle --output D:\CARLA_DATA
 Mỗi lần chạy collector tạo một thư mục `TownXX_timestamp`, không ghi đè session cũ.
 Nên có nhiều session ngắn thay vì một session rất dài; tối thiểu 3 session cho mỗi
 map nếu muốn map đó xuất hiện trong cả train/validation/test.
+
+## Giảm trùng lặp / mất cân bằng dữ liệu
+
+Dataset thu bằng autopilot có hai loại "trùng lặp" khác nhau, xử lý khác nhau:
+
+1. **Trùng lặp thật** (frame gần như y hệt frame trước): xảy ra khi xe **đứng yên**
+   và hành động không đổi trong nhiều giây liên tiếp — chủ yếu là lúc dừng đèn đỏ
+   hoặc kẹt xe. Ảnh gần như tĩnh, không mang thêm thông tin nên có thể loại bớt
+   một cách an toàn.
+2. **Mất cân bằng phân bố** (không phải trùng lặp thật): xe **đang di chuyển**
+   nhưng đi thẳng rất lâu (`steer≈0`). Ảnh vẫn đổi thật theo từng frame (cảnh vật
+   trôi qua), nên **không được xoá** — chỉ nên giảm tần suất xuất hiện lúc train
+   để mô hình không học lệch về "giữ nguyên vô-lăng".
+
+Ba lớp lọc/cân bằng tương ứng, dùng độc lập hoặc kết hợp:
+
+### 1) Lọc lúc thu thập (collector)
+
+`collect_data.py` / `collector_config.json` có 3 tham số (mặc định tắt qua CLI,
+đã **bật sẵn** trong `collector_config.json`):
+
+```text
+--dedup-stationary-speed 0.3   # m/s; duoi nguong nay coi la dung yen. 0 = tat
+--dedup-action-eps 0.02        # nguong |steer_delta|/|longitudinal_delta|
+--dedup-min-interval-s 1.0     # giay toi thieu giua 2 mau dung yen duoc giu lai
+```
+
+Một mẫu chỉ bị bỏ khi **đồng thời**: tốc độ dưới `dedup-stationary-speed`, hành
+động gần như không đổi so với mẫu đã ghi gần nhất (`< dedup-action-eps`), và
+chưa đủ `dedup-min-interval-s` giây kể từ mẫu dừng yên đã giữ gần nhất. Không
+bao giờ loại mẫu lúc xe đang di chuyển. Ảnh/CSV của các mẫu bị bỏ hoàn toàn
+không được ghi ra đĩa (đỡ cả dung lượng lẫn thời gian ghi), và số mẫu bị bỏ
+được in ra log (`dup_skip=`) và lưu vào `summary.json`
+(`duplicate_frames_skipped`).
+
+### 2) Lọc hậu xử lý cho dữ liệu đã thu trước đó
+
+Có 2 công cụ hậu xử lý dùng cùng tiêu chí và cùng 3 tham số
+(`--dedup-stationary-speed`, `--dedup-action-eps`, `--dedup-min-interval-s`,
+mặc định **tắt** để không đổi hành vi cũ) — chọn đúng cái khớp với luồng bạn
+dùng để train:
+
+- **`data_analysis/split_csv.py`** — đây là script thực sự sinh
+  `il_fields.csv`/`drl_fields.csv`/`astar_fields.csv` mà
+  `behavior_cloning/train_il.ipynb` đọc trực tiếp theo từng Town. Muốn
+  lọc trùng lặp cho dữ liệu **đã thu trước khi collector có filter này**, chạy
+  lại lệnh này cho từng session trước khi mở notebook:
+
+  ```powershell
+  python data_analysis\split_csv.py D:\CARLA_DATA\Town01_20260715_230000_123456 --dedup-stationary-speed 0.3 --dedup-min-interval-s 1.0
+  ```
+
+- **`build_manifest.py`** — chỉ ảnh hưởng `manifest.csv`/`dataset_summary.json`
+  (khoá `duplicate_frames_filtered`), dùng cho các luồng đọc `manifest.csv`
+  trực tiếp (hiện notebook IL **không** dùng file này, nó tự gộp Town và tự
+  chia session).
+
+  ```powershell
+  python build_manifest.py D:\CARLA_DATA --dedup-stationary-speed 0.3 --dedup-min-interval-s 1.0
+  ```
+
+Cả hai đều không xoá PNG hay sửa `states.csv` gốc — chỉ bớt dòng ở file CSV đầu
+ra tương ứng.
+
+### 3) Cân bằng lúc train (không xoá dữ liệu)
+
+`behavior_cloning/train_il.ipynb` dùng `WeightedRandomSampler` để mỗi
+epoch lấy mẫu đều hơn theo `traffic_light_state` (đã có sẵn) **và** theo mức độ
+`|steer|` (đi thẳng / lái nhẹ / cua vừa / cua gấp). Đây là lựa chọn an toàn nhất
+vì không mất bất kỳ mẫu recovery/cua gấp hiếm gặp nào — chỉ đổi tần suất được
+lấy ra trong một epoch.
+
+### 4) Đa dạng hoá route/session
+
+Nếu nhiều session autopilot lặp lại gần đúng một quỹ đạo, ba lớp lọc trên không
+giải quyết được (chúng không trùng nhau về mặt kỹ thuật, chỉ trùng nhau về mặt
+hành vi lái). Giảm bằng cách:
+
+- Ưu tiên nhiều session **ngắn** (đã khuyến nghị ở mục "Lặp lại qua nhiều map")
+  thay vì một session dài — mỗi lần chạy lại `automatic_control.py`, xe spawn
+  lại ở điểm ngẫu nhiên nên route cũng đổi theo.
+- Đổi thời tiết (`world.set_weather(...)`) và/hoặc thời điểm trong ngày giữa
+  các session, kể cả cùng map.
+- Khi build manifest, xem `dataset_summary.json` → `samples_by_map_and_split`
+  để kiểm tra map nào đang chiếm tỉ trọng quá lớn so với các map khác.
 
 ## 4. Kiểm tra session sau khi thu
 
@@ -447,9 +618,15 @@ Không bật synchronous mode riêng trong collector. Nếu sau này muốn thu 
 
 ## 7. Tham số nên dùng ban đầu
 
+Giá trị đang dùng thật trong `collector_config.json`. Mặc định CLI của `config.py`
+đã được chỉnh cho TRÙNG các giá trị này, nên chạy `collect_data.py` không kèm
+`--config` cũng ra cùng một loại dữ liệu (trước đây CLI mặc định `800 x 450 @ 10 FPS`
+— khác cả độ phân giải lẫn bước thời gian so với bộ dữ liệu đang có, mà không có
+cảnh báo nào):
+
 ```text
-resolution : 800 x 450
-fps        : 10
+resolution : 480 x 384
+fps        : 5   (CONTROL_DT = 0.2 s — hợp đồng với IL/DRL)
 FOV        : 90 độ
 camera     : x=1.5 m, z=2.4 m, pitch=-5 độ
 lookahead  : 5 m

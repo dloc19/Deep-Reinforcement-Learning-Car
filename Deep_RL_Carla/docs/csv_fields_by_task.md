@@ -7,7 +7,7 @@
 ### Observation (đầu vào)
 | Trường | Ghi chú |
 |---|---|
-| `seg_label_path` | Ảnh 1 kênh class ID 0–12 → one-hot 13 lớp |
+| `seg_label_path` | Ảnh 1 kênh **raw tag CARLA 0–22** → remap 4 lớp bám làn (`Background, Road, RoadLine, Sidewalk`) qua `schema.RAW_TO_TRAIN_LANE_LUT` → one-hot 4 lớp |
 | `seg_color_path` | Ảnh 3 kênh màu → normalize, không ColorJitter |
 | `speed_mps` | Chuẩn hóa theo speed limit |
 | `yaw_rate_rps` | Clip ÷ 1.5 |

@@ -2,7 +2,7 @@
 DRL algorithm in this package (PPO's `GaussianActor`/`ValueCritic`, SAC's `GaussianPolicy`/
 `QNetwork` — see `policy/actor_critic.py` and `sac/networks.py`).
 
-This mirrors `SteeringNet` in `behavior_cloning/train_il_kaggle.ipynb` layer-for-layer,
+This mirrors `SteeringNet` in `behavior_cloning/train_il.ipynb` layer-for-layer,
 including attribute names (`conv`, `pool`, `cnn_fc`, `scalar_mlp`) and the first two layers
 of its `head`. That is not a style choice: `policy/il_compat.py` copies tensors by
 state_dict key name from the IL checkpoint into these modules, so the definitions must stay
@@ -12,17 +12,32 @@ see `checkpoint_io.py`/`il_compat.py`, which fail loudly rather than silently sk
 mismatched tensors).
 
 Deliberately resolution-agnostic: `nn.AdaptiveAvgPool2d((1, 1))` after the conv stack means
-this backbone accepts any (H, W), so the DRL env can run at a lower resolution than the IL
-training resolution (384x480) to keep the PPO rollout buffer small, while still being able
-to load IL conv weights directly. Fine-tuning will adapt the pooled-feature statistics to
-the new resolution; no architectural change is required.
+this backbone accepts any (H, W), so the DRL env can run at a different resolution from the
+one IL trained on, while still loading IL conv weights directly. Three numbers are involved
+and they are NOT the same number:
+  - 480x384  what the collector records (`collector_config.json`'s `camera.width/height`)
+    and what the DRL env's camera runs at (`ppo_config.json`/`sac_config.json`).
+  - 240x192  what `SteeringNet` actually saw during IL training (`IMAGE_WIDTH`/
+    `IMAGE_HEIGHT` in train_il.ipynb — masks are downscaled with `downscale_labels`).
+  - 160x128  this file's fallback when a config omits the field.
+Nothing breaks when they differ, but a warm-started actor does see a different scale of
+pooled features than IL did; fine-tuning adapts those statistics. Set the env's
+`obs_width`/`obs_height` to 240x192 if you want the observation to match IL exactly.
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-NUM_CLASSES = 13  # CARLA semantic segmentation classes used across the whole project
+from .observation import NUM_SEG_CLASSES
+
+# Segmentation classes shared by the whole project: Background, Road, RoadLine, Sidewalk.
+# Source of truth is `data_collection/carla_collector/schema.py::SEG_CLASS_NAMES`; it is
+# imported (not re-typed) so this file cannot silently drift away from the collector and
+# from `policy/observation.py::resize_class_map`, which produces the class ids fed here.
+# A mismatch is the worst kind of bug in this pipeline: if the count still matches, nothing
+# raises and the model just reads the wrong channels.
+NUM_CLASSES = NUM_SEG_CLASSES
 
 
 class PolicyBackbone(nn.Module):

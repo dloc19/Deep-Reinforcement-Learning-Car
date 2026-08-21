@@ -53,10 +53,17 @@ def parse_args():
     parser.add_argument("--wait-vehicle-timeout", type=float, default=120.0)
 
     camera = parser.add_argument_group("camera")
-    camera.add_argument("--width", type=int, default=800)
-    camera.add_argument("--height", type=int, default=450)
+    # Mac dinh CLI phai TRUNG collector_config.json: neu khong, chay
+    # `collect_data.py` khong kem --config se sinh ra mot bo du lieu khac do phan
+    # giai / khac buoc thoi gian voi bo dang co, va khong gi bao loi ca.
+    camera.add_argument("--width", type=int, default=480)
+    camera.add_argument("--height", type=int, default=384)
     camera.add_argument("--fov", type=float, default=90.0)
-    camera.add_argument("--fps", type=float, default=10.0)
+    camera.add_argument("--fps", type=float, default=5.0,
+                        help="Tan so thu mau. 5 FPS = CONTROL_DT 0.2s - day la HOP "
+                             "DONG voi IL/DRL: previous_steer nghia la 'lenh cua 1 "
+                             "buoc truoc', doi FPS la doi y nghia dac trung do "
+                             "(xem train_il.ipynb muc 2)")
     camera.add_argument(
         "--image-mode", choices=("seg-only", "seg-rgb"), default="seg-only",
         help="seg-only tiet kiem tai nguyen; seg-rgb luu them RGB")
@@ -98,6 +105,21 @@ def parse_args():
                          help="0=khong gioi han")
     runtime.add_argument("--queue-size", type=int, default=32)
     runtime.add_argument("--no-event-sensors", action="store_true")
+
+    dedup = parser.add_argument_group("dedup")
+    dedup.add_argument(
+        "--dedup-stationary-speed", type=float, default=0.0,
+        help=("m/s; duoi nguong nay coi xe la dung yen. 0 = tat loc trung lap "
+              "(mac dinh, giu nguyen hanh vi cu). Chi bo qua mau khi xe dung yen "
+              "VA hanh dong khong doi (vd. dung cho den do), khong bao gio bo "
+              "mau luc xe dang di chuyen."))
+    dedup.add_argument(
+        "--dedup-action-eps", type=float, default=0.02,
+        help="Nguong |steer_delta|/|longitudinal_delta| de coi hanh dong la khong doi")
+    dedup.add_argument(
+        "--dedup-min-interval-s", type=float, default=1.0,
+        help=("So giay toi thieu giua 2 mau dung yen/hanh dong khong doi lien tiep "
+              "duoc GIU LAI; chi co hieu luc khi --dedup-stationary-speed > 0"))
     _apply_config_file(parser)
     args = parser.parse_args()
 
@@ -107,6 +129,12 @@ def parse_args():
         parser.error("--graph-resolution phai > 0")
     if args.lane_change_cost < 1.0:
         parser.error("--lane-change-cost nen >= 1")
+    if args.dedup_stationary_speed < 0:
+        parser.error("--dedup-stationary-speed phai >= 0")
+    if args.dedup_action_eps < 0:
+        parser.error("--dedup-action-eps phai >= 0")
+    if args.dedup_min_interval_s < 0:
+        parser.error("--dedup-min-interval-s phai >= 0")
     if (args.goal_x is None) != (args.goal_y is None):
         parser.error("Phai truyen dong thoi --goal-x va --goal-y")
     if args.goal_spawn_index >= 0 and args.goal_x is not None:

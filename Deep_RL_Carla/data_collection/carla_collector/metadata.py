@@ -6,7 +6,7 @@ import math
 import carla
 
 from .geometry import utc_now, waypoint_record
-from .schema import CITYSCAPES_COLORS, ROUTE_FIELDS
+from .schema import ROUTE_FIELDS, SEG_CLASS_COLORS, SEG_CLASS_NAMES
 
 
 def write_metadata(path, world, world_map, ego, args, session_id,
@@ -44,7 +44,8 @@ def write_metadata(path, world, world_map, ego, args, session_id,
                 "cy": args.height / 2.0},
         },
         "weather": {name: getattr(weather, name, None) for name in weather_fields},
-        "semantic_colors": {str(k): v for k, v in CITYSCAPES_COLORS.items()},
+        "semantic_class_names": list(SEG_CLASS_NAMES),
+        "semantic_colors": {str(k): v for k, v in SEG_CLASS_COLORS.items()},
         "lookahead_m": args.lookahead_m,
         "route_lookaheads_m": args.route_lookaheads,
         "goal": waypoint_record(goal_waypoint) if goal_waypoint is not None else None,
@@ -64,9 +65,11 @@ def write_metadata(path, world, world_map, ego, args, session_id,
                 "steer_delta", "longitudinal_delta"],
         },
         "notes": (
-            "seg_label stores raw class IDs and is the resource-efficient training input; "
-            "seg_color may also be trained as a 3-channel categorical image when its palette "
-            "is kept unchanged."),
+            "seg_label stores RAW CARLA class IDs (0-22) and is the training input; the "
+            "4-class lane-keeping scheme (semantic_class_names) is applied by the training "
+            "pipelines via schema.RAW_TO_TRAIN_LANE_LUT, so a different scheme can be "
+            "re-derived from this dataset without recollecting. seg_color is a preview "
+            "already folded down to those 4 classes."),
     }
     with path.open("w", encoding="utf-8") as handle:
         json.dump(metadata, handle, indent=2, ensure_ascii=False)

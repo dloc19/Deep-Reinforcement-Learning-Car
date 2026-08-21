@@ -7,6 +7,8 @@
   "camera": {
     "width": 480,
     "height": 384,
+    "obs_width": 240,
+    "obs_height": 192,
     "fov": 90.0,
     "fps": 10.0,
     "camera_x": 1.5,
