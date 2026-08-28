@@ -63,7 +63,8 @@ def main():
                       ["traffic_light_%s" % v for v in contract.traffic_light_vocab])
     print("Observation contract: %d scalar features: %s" % (contract.scalar_feature_dim, feature_names))
 
-    actor = GaussianPolicy(contract.scalar_feature_dim, contract.num_classes)
+    actor = GaussianPolicy(contract.scalar_feature_dim, contract.num_classes,
+                           log_std_init=config.get("log_std_init", -2.5))
     critic = TwinQNetwork(contract.scalar_feature_dim, action_dim=2, num_classes=contract.num_classes)
 
     if config["warm_start"]:

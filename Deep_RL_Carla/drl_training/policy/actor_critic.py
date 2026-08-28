@@ -38,12 +38,25 @@ from .il_compat import (
 
 class GaussianActor(nn.Module):
     def __init__(self, num_scalar_features, num_classes=NUM_CLASSES,
-                 log_std_init=-1.2, log_std_min=-5.0, log_std_max=0.5):
+                 log_std_init=(-3.0, -1.5), log_std_min=-5.0, log_std_max=0.5):
         super(GaussianActor, self).__init__()
         self.backbone = PolicyBackbone(num_scalar_features, num_classes)
         self.trunk_head = build_trunk_head(self.backbone.out_features)
         self.mean_head = nn.Linear(32, 2)
-        self.log_std = nn.Parameter(torch.full((2,), float(log_std_init)))
+        # `log_std_init` nhan mot so (dung chung ca hai chieu) HOAC mot cap [steer, long].
+        # Nen dung mot cap: hai chieu nay khong cung thang do chut nao. Tren tap val, |steer|
+        # dien hinh khoang 0.005-0.03, nen std 0.3 (log_std=-1.2) la nhieu GAP 10-60 LAN
+        # tin hieu — moi rollout dau tien se lang xe ra khoi lan truoc khi PPO kip hoc gi,
+        # va do chinh la thu warm-start IL sinh ra de tranh. Chieu longitudinal thi nguoc
+        # lai: gia tri chay ca dai [-1, 1] nen chiu duoc nhieu lon hon nhieu.
+        if isinstance(log_std_init, (list, tuple)):
+            if len(log_std_init) != 2:
+                raise ValueError("log_std_init dang danh sach phai co dung 2 phan tu "
+                                 "[steer, longitudinal], nhan duoc %r" % (log_std_init,))
+            log_std_values = torch.tensor([float(v) for v in log_std_init])
+        else:
+            log_std_values = torch.full((2,), float(log_std_init))
+        self.log_std = nn.Parameter(log_std_values)
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
 

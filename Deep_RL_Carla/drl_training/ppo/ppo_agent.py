@@ -20,8 +20,22 @@ class PPOAgent:
         self.device = device
         self.cfg = config
 
-        params = list(self.actor.parameters()) + list(self.critic.parameters())
-        self.optimizer = torch.optim.Adam(params, lr=config.get("learning_rate", 3e-4))
+        # Hai optimizer RIENG, khong phai mot. Ly do la §12 cua notebook IL: critic khoi
+        # tao NGAU NHIEN, nen vai tram update dau no sinh advantage gan nhu nhieu trang.
+        # Dung chung mot LR nghia la actor da duoc warm-start bang IL se bi chinh khoi
+        # nhieu do voi cung mot toc do — tuc XOA trong so IL truoc khi critic kip hoc gi.
+        # Tach ra cho phep: critic LR binh thuong (3e-4), actor LR nho (1e-5..3e-5), va
+        # `critic_warmup_updates` dau tien DONG BANG han actor.
+        self.actor_lr = config.get("actor_lr", config.get("learning_rate", 3e-5))
+        self.critic_lr = config.get("critic_lr", config.get("learning_rate", 3e-4))
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=self.actor_lr)
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=self.critic_lr)
+        self.critic_warmup_updates = int(config.get("critic_warmup_updates", 0))
+
+        # Xem docstring `policy.backbone.freeze_batchnorm`. Phai goi SAU khi actor/critic da
+        # .to(device) va TRUOC rollout dau tien.
+        from policy.backbone import freeze_batchnorm
+        self.frozen_bn = freeze_batchnorm(self.actor, self.critic)
 
         self.clip_range = config.get("clip_range", 0.2)
         self.value_clip_range = config.get("value_clip_range", 0.2)
@@ -63,15 +77,26 @@ class PPOAgent:
         scalar_t = torch.as_tensor(scalar, device=self.device).unsqueeze(0)
         return float(self.critic(seg_t, scalar_t).item())
 
-    def update(self, buffer, advantages, returns):
+    def update(self, buffer, advantages, returns, freeze_actor=False):
+        """`freeze_actor=True`: chi train critic trong update nay (giai doan warmup).
+
+        Actor van chay forward de log approx_kl/entropy cho tien theo doi, nhung khong co
+        gradient nao cham vao no. Day la khuyen nghi §12 cua notebook IL: de critic hoc
+        xong ham gia tri quanh hanh vi IL TRUOC, roi moi cho phep policy dich chuyen.
+        """
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
         stats = {"policy_loss": [], "value_loss": [], "entropy": [], "approx_kl": [], "clip_fraction": []}
 
         for _epoch in range(self.epochs):
             epoch_kls = []
             for batch in buffer.iter_minibatches(self.batch_size, advantages, returns):
-                new_log_probs, entropy = self.actor.evaluate_actions(
-                    batch["seg"], batch["scalar"], batch["actions"])
+                if freeze_actor:
+                    with torch.no_grad():
+                        new_log_probs, entropy = self.actor.evaluate_actions(
+                            batch["seg"], batch["scalar"], batch["actions"])
+                else:
+                    new_log_probs, entropy = self.actor.evaluate_actions(
+                        batch["seg"], batch["scalar"], batch["actions"])
                 ratio = torch.exp(new_log_probs - batch["old_log_probs"])
                 surr1 = ratio * batch["advantages"]
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range) * batch["advantages"]
@@ -86,13 +111,18 @@ class PPOAgent:
                 ).mean()
 
                 entropy_loss = -entropy.mean()
-                loss = policy_loss + self.value_coef * value_loss + self.entropy_coef * entropy_loss
 
-                self.optimizer.zero_grad(set_to_none=True)
-                loss.backward()
-                nn.utils.clip_grad_norm_(
-                    list(self.actor.parameters()) + list(self.critic.parameters()), self.max_grad_norm)
-                self.optimizer.step()
+                self.critic_optimizer.zero_grad(set_to_none=True)
+                if freeze_actor:
+                    (self.value_coef * value_loss).backward()
+                else:
+                    self.actor_optimizer.zero_grad(set_to_none=True)
+                    (policy_loss + self.value_coef * value_loss
+                     + self.entropy_coef * entropy_loss).backward()
+                    nn.utils.clip_grad_norm_(self.actor.parameters(), self.max_grad_norm)
+                    self.actor_optimizer.step()
+                nn.utils.clip_grad_norm_(self.critic.parameters(), self.max_grad_norm)
+                self.critic_optimizer.step()
 
                 with torch.no_grad():
                     approx_kl = (batch["old_log_probs"] - new_log_probs).mean().item()
@@ -104,7 +134,8 @@ class PPOAgent:
                 stats["approx_kl"].append(approx_kl)
                 stats["clip_fraction"].append(clip_fraction)
 
-            if self.target_kl is not None and np.mean(epoch_kls) > 1.5 * self.target_kl:
+            if (not freeze_actor and self.target_kl is not None
+                    and np.mean(epoch_kls) > 1.5 * self.target_kl):
                 break  # policy moved too far this update — stop remaining epochs early
 
         return {key: float(np.mean(values)) if values else 0.0 for key, values in stats.items()}
@@ -113,11 +144,19 @@ class PPOAgent:
         return {
             "actor": self.actor.state_dict(),
             "critic": self.critic.state_dict(),
-            "optimizer": self.optimizer.state_dict(),
+            "actor_optimizer": self.actor_optimizer.state_dict(),
+            "critic_optimizer": self.critic_optimizer.state_dict(),
         }
 
     def load_state_dict(self, state):
         self.actor.load_state_dict(state["actor"])
         self.critic.load_state_dict(state["critic"])
-        if "optimizer" in state:
-            self.optimizer.load_state_dict(state["optimizer"])
+        # Checkpoint truoc ban tach optimizer chi co mot key "optimizer" gop ca actor lan
+        # critic — khong the chia lai duoc, nen bo qua trang thai Adam (momentum) va chi
+        # nap trong so mang. Mat vai chuc step de Adam ap lai moment, khong mat gi khac.
+        if "actor_optimizer" in state:
+            self.actor_optimizer.load_state_dict(state["actor_optimizer"])
+            self.critic_optimizer.load_state_dict(state["critic_optimizer"])
+        elif "optimizer" in state:
+            print("[!] Checkpoint cu (mot optimizer gop). Da nap trong so actor/critic, bo "
+                  "qua trang thai Adam.")

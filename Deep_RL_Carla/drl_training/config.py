@@ -26,10 +26,18 @@ COMMON_DEFAULTS = {
     #   dac trung nhu luc train IL. Ha o day cung giam 4x bo nho rollout/replay
     #   (SAC 50k transition: 9.2GB o 480x384 -> 2.2GB o 240x192).
     "width": 480, "height": 384, "obs_width": 240, "obs_height": 192,
-    "fov": 90.0, "fps": 10.0,
+    "fov": 90.0, "fps": 20.0,
     "camera_x": 1.5, "camera_y": 0.0, "camera_z": 2.4, "camera_pitch": -5.0,
     "vehicle_filter": "vehicle.lincoln.mkz2017",
-    "max_episode_steps": 1000, "off_lane_patience_steps": 20,
+    # fps 20 (0.05s/tick) x action_repeat 4 = 0.2s moi QUYET DINH cua policy = dung
+    # `control_dt` ma checkpoint IL da train (5 FPS). Khong the thay bang fps=5 truc tiep:
+    # CARLA khuyen cao fixed_delta_seconds <= 0.05s, tren muc do vat ly bat dau sai (xe
+    # rung, va cham gia). CarlaLaneKeepEnv._check_control_rate() canh bao neu hai ben lech.
+    "action_repeat": 4,
+    # Tinh theo QUYET DINH (khong phai tick): 500 x 0.2s = 100s moi episode.
+    "max_episode_steps": 500,
+    # 10 quyet dinh = 2s lien tuc ngoai lan thi ket thuc episode (truoc day 20 tick = 1s).
+    "off_lane_patience_steps": 10,
     "warmup_ticks": 4, "frame_timeout": 5.0, "no_rendering": False, "seed": 42,
     # reward weights (docs/csv_fields_by_task.md — "DRL" section)
     "w_speed": 1.0, "w_lane_offset": 1.0, "w_heading": 0.5,
@@ -43,21 +51,36 @@ COMMON_DEFAULTS = {
 ALGO_DEFAULTS = {
     "ppo": {
         "output": "./runs/ppo_lane_keep",
-        "learning_rate": 3e-4, "gae_lambda": 0.95, "clip_range": 0.2,
+        # LR TACH RIENG actor/critic + `critic_warmup_updates`: xem docstring
+        # ppo/ppo_agent.py.__init__ va §12 cua behavior_cloning/train_il_v4.ipynb.
+        "actor_lr": 2e-5, "critic_lr": 3e-4, "critic_warmup_updates": 10,
+        # [steer, longitudinal]. std(steer) = e^-3 = 0.05, du de tham do quanh mot lenh lai
+        # co bien do dien hinh 0.005-0.03 ma khong lang xe ra khoi lan ngay rollout dau.
+        "log_std_init": (-3.0, -1.5),
+        "gae_lambda": 0.95, "clip_range": 0.2,
         "value_clip_range": 0.2, "entropy_coef": 0.0, "value_coef": 0.5,
-        "max_grad_norm": 0.5, "epochs": 10, "batch_size": 256, "target_kl": 0.02,
-        "total_steps": 2000000, "n_steps": 2048,
+        "max_grad_norm": 0.5, "epochs": 10, "batch_size": 128, "target_kl": 0.02,
+        # total_steps dem QUYET DINH: 200k x 0.2s = 11 gio mo phong. Con so cu (2 trieu)
+        # duoc dat khi 1 step = 1 tick 0.1s; giu nguyen se thanh 111 gio mo phong.
+        "total_steps": 200000, "n_steps": 1024,
         "save_every_updates": 5, "eval_every_updates": 10, "eval_episodes": 3,
     },
     "sac": {
         "output": "./runs/sac_lane_keep",
         "actor_lr": 3e-4, "critic_lr": 3e-4, "alpha_lr": 3e-4,
-        "tau": 0.005, "target_entropy": None,  # None -> auto = -action_dim (Haarnoja et al.)
-        "batch_size": 256, "buffer_capacity": 100000,
-        "learning_starts": 5000, "train_freq": 1, "gradient_steps": 1,
+        "tau": 0.005,
+        # -action_dim = -2.0 (Haarnoja et al.) la mac dinh cho tac vu dieu khien tong quat.
+        # O day no qua CAO: entropy muc do dat buoc alpha giu do lech lon tren CHIEU STEER,
+        # trong khi lenh lai dien hinh chi 0.005-0.03. Ha xuong -4.0 cho phep policy nhon
+        # hon ma van con tham do o chieu longitudinal.
+        "target_entropy": -4.0,
+        "log_std_init": -2.5,
+        "batch_size": 128, "buffer_capacity": 50000,
+        "learning_starts": 2000, "train_freq": 1, "gradient_steps": 1,
         "max_grad_norm": 0.5,
-        "total_steps": 500000, "save_every_steps": 10000,
-        "eval_every_steps": 20000, "eval_episodes": 3,
+        # Cung ly do doi don vi nhu PPO: 100k quyet dinh x 0.2s = 5.6 gio mo phong.
+        "total_steps": 100000, "save_every_steps": 5000,
+        "eval_every_steps": 10000, "eval_episodes": 3,
     },
 }
 
@@ -97,6 +120,11 @@ def load_config(algorithm, argv=None):
     parser.add_argument("--no-warm-start", dest="warm_start", action="store_false", default=None,
                          help="Bo qua warm-start IL — actor khoi tao ngau nhien (chi de doi chung)")
     parser.add_argument("--total-steps", type=int, default=None)
+    parser.add_argument("--action-repeat", type=int, default=None,
+                         help="So tick vat ly moi quyet dinh cua policy. fps/action_repeat "
+                              "phai bang 1/control_dt cua checkpoint IL (mac dinh 20/4 = 5 Hz)")
+    parser.add_argument("--max-episode-steps", type=int, default=None,
+                         help="So QUYET DINH toi da moi episode (khong phai so tick)")
     parser.add_argument("--n-steps", type=int, default=None, help="[train_ppo.py] so buoc moi rollout/update")
     parser.add_argument("--buffer-capacity", type=int, default=None,
                          help="[train_sac.py] so transition toi da trong replay buffer — "
@@ -133,7 +161,7 @@ def load_config(algorithm, argv=None):
 
     for key in ("host", "port", "il_checkpoint", "output", "total_steps", "n_steps",
                 "buffer_capacity", "width", "height", "obs_width", "obs_height",
-                "batch_size", "device"):
+                "batch_size", "device", "action_repeat", "max_episode_steps"):
         value = getattr(args, key, None)
         if value is not None:
             config[key] = value

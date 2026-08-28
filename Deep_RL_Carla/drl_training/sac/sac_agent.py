@@ -35,6 +35,15 @@ class SACAgent(object):
         self.log_alpha = torch.zeros(1, requires_grad=True, device=device)
         self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=config.get("alpha_lr", 3e-4))
 
+        # Xem docstring `policy.backbone.freeze_batchnorm`. SAC can dieu nay khong kem PPO:
+        # `select_action()` chay tren batch = 1 con `update()` chay tren batch 128, va target
+        # critic thi duoc cap nhat bang Polyak — de thong ke BatchNorm troi theo batch size
+        # se lam target va online critic lech nhau mot cach khong the truy vet.
+        from policy.backbone import freeze_batchnorm
+        self.frozen_bn = freeze_batchnorm(self.actor, self.critic)
+        if getattr(self, "critic_target", None) is not None:
+            self.frozen_bn += freeze_batchnorm(self.critic_target)
+
     @property
     def alpha(self):
         return self.log_alpha.exp()

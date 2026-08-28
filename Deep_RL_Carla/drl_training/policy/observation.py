@@ -61,12 +61,33 @@ def _require_carla():
     return carla
 
 
+# Cac cot KHONG duoc phep nam trong observation vi chung la HE QUA cua hanh dong dang can
+# du doan, do cung mot thoi diem — dua vao la ro ri nhan (causal leak), khong phai dac trung.
+#
+#   yaw_rate_rps[t]  : xe dang quay CHINH VI vo-lang dang quay. Do tren checkpoint v8/v4 cho
+#                      d(steer)/d(yaw_rate) = +0.32 / +0.44, tuc bien do steer do yaw_rate
+#                      gay ra lon gap 114 lan (v8) va 290 lan (v4) so voi do ANH gay ra.
+#                      Model chi doc lai dap an. Trong vong kin, yaw_rate khoi tao bang 0 ->
+#                      steer 0 -> xe di thang -> yaw_rate van 0: mot vong lap tu duy tri lam
+#                      xe lao thang cho toi khi ra khoi duong.
+#   previous_steer   : ro ri yeu hon (bien do 0.175) nhung cung co che.
+#   previous_longitudinal : gay sup do ve phanh — xe dung yen thi model tiep tuc phanh.
+#
+# `speed_mps` / `speed_limit_kmh` KHONG nam day: toc do la he qua cua ga TRONG QUA KHU, va
+# la thong tin bat buoc de quyet dinh ga hien tai.
+LEAKY_OBSERVATION_COLS = ("yaw_rate_rps", "previous_steer", "previous_longitudinal")
+
+
 class ObservationContract(object):
     def __init__(self, checkpoint):
         self.num_classes = checkpoint["num_classes"]
         self.image_height = checkpoint.get("image_height")
         self.image_width = checkpoint.get("image_width")
         self.scalar_feature_dim = checkpoint["scalar_feature_dim"]
+        # Nhip ra quyet dinh luc train IL (giay). `previous_steer`/`previous_longitudinal`
+        # nghia la "lenh cua control_dt truoc" — env DRL va bridge phai chay dung nhip nay
+        # (xem CarlaLaneKeepEnv._check_control_rate / LearnedAutopilotMode.action_repeat).
+        self.control_dt = checkpoint.get("control_dt")
         self.continuous_cols = list(checkpoint["continuous_cols"])
         self.raw_action_cols = list(checkpoint["raw_action_cols"])
         self.norm_stats = checkpoint["norm_stats"]
@@ -93,9 +114,18 @@ class ObservationContract(object):
             raise ValueError(
                 "Checkpoint IL dung %d lop segmentation, nhung pipeline hien tai dung %d "
                 "lop (%s). Day KHONG phai loi shape - no se chay im lang va lai sai. Train "
-                "lai theo thu tu: carla_seg.ipynb -> train_il.ipynb -> DRL, hoac quay ve "
+                "lai theo thu tu: train-seg.ipynb -> train_il.ipynb -> DRL, hoac quay ve "
                 "dung checkpoint IL cung phien ban bang nhan." %
                 (self.num_classes, NUM_SEG_CLASSES, SEG_CLASS_NAMES))
+
+        leaks = [c for c in (self.continuous_cols + self.raw_action_cols)
+                 if c in LEAKY_OBSERVATION_COLS]
+        if leaks:
+            print("[!] CANH BAO RO RI QUAN SAT: checkpoint IL nay dua %s vao observation.\n"
+                  "    Day la he qua cua chinh hanh dong can du doan, nen model se hoc doc\n"
+                  "    lai dap an thay vi nhin anh segmentation. MAE offline se rat dep va\n"
+                  "    xe se KHONG lai duoc trong vong kin. Train lai voi\n"
+                  "    behavior_cloning/train_il_v5.ipynb (da bo cac cot nay)." % (leaks,))
 
     def normalize_traffic_light(self, value):
         v = str(value).strip().lower()
@@ -119,7 +149,7 @@ class ObservationContract(object):
 def resize_class_map(class_map, height, width):
     """Remaps a raw CARLA semantic-segmentation frame (raw tags 0-22) onto the project's
     4-class lane-keeping scheme (`RAW_TO_TRAIN_LANE_LUT` — Background/Road/RoadLine/Sidewalk,
-    the same table as `carla_seg.ipynb`'s `LABEL_LUT` / `train_il.ipynb`'s `SEG_LABEL_LUT`),
+    the same table as `train-seg.ipynb`'s `LABEL_LUT` / `train_il.ipynb`'s `SEG_LABEL_LUT`),
     then nearest-neighbour resizes it.
 
     This is the single choke point every *live* caller — this env's `_make_observation` and

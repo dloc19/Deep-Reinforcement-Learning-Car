@@ -82,6 +82,7 @@ class CarlaLaneKeepEnv(object):
         self.events = None
         self._seg_queue = None
 
+        self.action_repeat = max(1, int(config.get("action_repeat", 1)))
         self.previous_steer = 0.0
         self.previous_longitudinal = 0.0
         self.previous_collisions = 0
@@ -89,14 +90,33 @@ class CarlaLaneKeepEnv(object):
         self.off_lane_streak = 0
         self.step_count = 0
         self._rng = random.Random(config.get("seed"))
+        self._check_control_rate()
 
     # ------------------------------------------------------------------ setup / teardown
     def _apply_synchronous_mode(self):
         settings = self.world.get_settings()
         settings.synchronous_mode = True
-        settings.fixed_delta_seconds = 1.0 / float(self.cfg.get("fps", 10.0))
+        settings.fixed_delta_seconds = 1.0 / float(self.cfg.get("fps", 20.0))
         settings.no_rendering_mode = bool(self.cfg.get("no_rendering", False))
         self.world.apply_settings(settings)
+
+    def _check_control_rate(self):
+        """Doi chieu nhip ra quyet dinh cua env voi `control_dt` ghi trong checkpoint IL.
+
+        Day la loai lech IM LANG: shape van khop, khong gi bao loi, chi co policy hanh xu
+        vo nghia. In canh bao thay vi raise vi co truong hop co tinh (vd doi chung 10 Hz).
+        """
+        control_dt = getattr(self.contract, "control_dt", None)
+        if not control_dt:
+            return
+        env_dt = self.action_repeat / float(self.cfg.get("fps", 20.0))
+        if abs(env_dt - control_dt) > 1e-6:
+            print("[!] Nhip dieu khien env = %.3fs (fps=%.1f x action_repeat=%d) nhung "
+                  "checkpoint IL train o control_dt = %.3fs. `previous_steer`/"
+                  "`previous_longitudinal` se mang y nghia khac luc train. Dat "
+                  "fps=%.1f + action_repeat=%d de khop." %
+                  (env_dt, float(self.cfg.get("fps", 20.0)), self.action_repeat, control_dt,
+                   1.0 / 0.05, int(round(control_dt / 0.05))))
 
     def _camera_blueprint(self):
         bp = self.world.get_blueprint_library().find("sensor.camera.semantic_segmentation")
@@ -202,12 +222,27 @@ class CarlaLaneKeepEnv(object):
         return self._make_observation(state), {"state": state}
 
     def step(self, action):
+        """Mot STEP = mot QUYET DINH cua policy, keo dai `action_repeat` tick vat ly.
+
+        Ly do phai co action_repeat: hop dong IL (`control_dt` trong checkpoint, 0.2s = 5 Hz)
+        dinh nghia `previous_steer`/`previous_longitudinal` la "lenh cua 0.2s TRUOC". Neu env
+        goi policy moi tick 0.05s thi cung mot o dac trung mang y nghia khac han luc train ->
+        warm-start lech ma khong co exception nao. Nhung ha thang `fixed_delta_seconds` len
+        0.2s de bu lai thi vat ly CARLA vo (khuyen cao chinh thuc: <= 0.05s) — xe rung, va
+        cham gia. Nen: vat ly chay 0.05s, policy quyet dinh moi 4 tick (`action_repeat`).
+        `_check_control_rate()` doi chieu fps*action_repeat voi `control_dt` cua checkpoint.
+        """
         steer = float(np.clip(action[0], -1.0, 1.0))
         longitudinal = float(np.clip(action[1], -1.0, 1.0))
         throttle, brake = (longitudinal, 0.0) if longitudinal >= 0.0 else (0.0, -longitudinal)
-        self.vehicle.apply_control(carla.VehicleControl(throttle=throttle, steer=steer, brake=brake))
-        self.world.tick()
-        seg = self._get_seg_frame()
+        control = carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
+        seg = None
+        for _ in range(self.action_repeat):
+            # apply_control() lai o MOI tick: CARLA giu lenh cuoi cung nen mot lan la du,
+            # nhung goi lai la vo hai va chong truong hop mode/agent khac chen ngang.
+            self.vehicle.apply_control(control)
+            self.world.tick()
+            seg = self._get_seg_frame()
         self.step_count += 1
 
         state = self._build_state(seg)

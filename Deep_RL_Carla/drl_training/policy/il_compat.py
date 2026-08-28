@@ -68,10 +68,21 @@ def load_matching(module, remapped, allow_missing=()):
         if key not in own_state:
             raise RuntimeError("IL checkpoint co tensor '%s' nhung module khong co key nay." % key)
         if own_state[key].shape != tensor.shape:
+            hint = ("Kiem tra scalar_feature_dim / NUM_CLASSES giua IL notebook va DRL "
+                    "co khop nhau khong.")
+            if "cnn_fc" in key:
+                # Shape cua cnn_fc = 64 * POOL_GRID[0] * POOL_GRID[1]. Lech o DUNG key nay
+                # gan nhu luon la POOL_GRID lech, hoac la mot checkpoint truoc v5 (pool (1,1)
+                # -> 64 chieu) dang duoc nap vao backbone v5 (pool (4,6) -> 1536 chieu).
+                hint = ("Key nay phu thuoc POOL_GRID. module co %d chieu vao, checkpoint co "
+                        "%d. Neu checkpoint la ban TRUOC v5 (pool (1,1), 64 chieu) thi no "
+                        "khong dung duoc voi backbone hien tai — train lai bang "
+                        "behavior_cloning/train_il_v5.ipynb, hoac dat POOL_GRID = (1, 1) "
+                        "trong policy/backbone.py de quay ve kien truc cu." %
+                        (tuple(own_state[key].shape)[-1], tuple(tensor.shape)[-1]))
             raise RuntimeError(
-                "Shape lech o '%s': module=%s, checkpoint=%s. Kiem tra scalar_feature_dim / "
-                "NUM_CLASSES giua IL notebook va DRL co khop nhau khong." %
-                (key, tuple(own_state[key].shape), tuple(tensor.shape)))
+                "Shape lech o '%s': module=%s, checkpoint=%s. %s" %
+                (key, tuple(own_state[key].shape), tuple(tensor.shape), hint))
         own_state[key] = tensor
 
     module.load_state_dict(own_state)

@@ -64,8 +64,12 @@ def main():
                       ["traffic_light_%s" % v for v in contract.traffic_light_vocab])
     print("Observation contract: %d scalar features: %s" % (contract.scalar_feature_dim, feature_names))
 
-    actor = GaussianActor(contract.scalar_feature_dim, contract.num_classes)
+    actor = GaussianActor(contract.scalar_feature_dim, contract.num_classes,
+                          log_std_init=config.get("log_std_init", (-3.0, -1.5)))
     critic = ValueCritic(contract.scalar_feature_dim, contract.num_classes)
+    print("log_std khoi tao: %s -> std %s" % (
+        [round(v, 2) for v in actor.log_std.detach().tolist()],
+        [round(v, 4) for v in actor.log_std.detach().exp().tolist()]))
 
     if config["warm_start"]:
         load_il_actor_weights(actor, il_checkpoint)
@@ -74,6 +78,8 @@ def main():
         print("[!] Bo qua warm-start — actor khoi tao ngau nhien (chi nen dung de doi chung/debug).")
 
     agent = PPOAgent(actor, critic, config, device)
+    print("actor_lr=%.1e | critic_lr=%.1e | critic_warmup_updates=%d | BatchNorm dong bang: %d lop" % (
+        agent.actor_lr, agent.critic_lr, agent.critic_warmup_updates, agent.frozen_bn))
 
     update = config_start_update = 0
     if config["_resume"]:
@@ -141,7 +147,12 @@ def main():
             # zeroes this out inside `compute_gae` regardless of what `last_value` is.
             last_value = agent.value_of(obs["seg"], obs["scalar"])
             advantages, returns = buffer.compute_gae(last_value, config["gamma"], config["gae_lambda"])
-            stats = agent.update(buffer, advantages, returns)
+            # Trong `critic_warmup_updates` dau, actor bi dong bang: critic hoc ham gia tri
+            # quanh chinh hanh vi IL truoc khi bat ky gradient policy nao duoc phep chay
+            # (§12 notebook IL). Bo qua buoc nay thi advantage tu critic ngau nhien se xoa
+            # trong so warm-start trong vai tram update dau.
+            freeze_actor = update < agent.critic_warmup_updates
+            stats = agent.update(buffer, advantages, returns, freeze_actor=freeze_actor)
 
             elapsed = max(time.time() - update_start, 1e-6)
             mean_reward = float(np.mean(recent_episode_rewards)) if recent_episode_rewards else float("nan")
@@ -152,8 +163,9 @@ def main():
                 "clip_fraction": stats["clip_fraction"],
                 "steps_per_sec": config["n_steps"] / elapsed, "mean_episode_reward": mean_reward,
             })
-            print("update=%d step=%d policy_loss=%.4f value_loss=%.4f kl=%.4f mean_ep_reward=%.2f (%.1f steps/s)" % (
-                update, global_step, stats["policy_loss"], stats["value_loss"], stats["approx_kl"],
+            print("update=%d step=%d%s policy_loss=%.4f value_loss=%.4f kl=%.4f mean_ep_reward=%.2f (%.1f steps/s)" % (
+                update, global_step, " [critic-warmup]" if freeze_actor else "",
+                stats["policy_loss"], stats["value_loss"], stats["approx_kl"],
                 mean_reward, config["n_steps"] / elapsed))
 
             is_last_update = update == n_updates - 1
