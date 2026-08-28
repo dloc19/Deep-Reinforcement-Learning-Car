@@ -67,8 +67,22 @@ class SimLoop:
         logger.info("Sim loop running (target %.0f Hz)", self.cfg.sim_fps)
         last_publish = 0.0
         publish_interval = 1.0 / self.cfg.publish_fps
+        # GHIM THEO THOI GIAN THUC. `fixed_delta_seconds` chi noi mot tick dai bao nhieu
+        # trong the gioi mo phong; no khong ep vong lap nay cho. Khong ghim thi world.tick()
+        # chay het toc do may (~175 Hz do duoc tren may nay voi Town03 quality Low), tuc
+        # mo phong chay nhanh gap ~9 lan thuc te: nguoi xem thay xe tua nhanh, va camera
+        # segmentation ban ~175 khung/giay vao client. Ca hai deu khong phai thu ta muon
+        # trong mot ban demo.
+        tick_interval = 1.0 / self.cfg.sim_fps
+        next_tick = time.time()
         while not self._stop.is_set():
             self._drain_commands()
+            now = time.time()
+            if now < next_tick:
+                time.sleep(next_tick - now)
+            # Tut lai neu da tre nhieu hon mot tick (vd vua load town xong) — khong thi
+            # vong lap se "duoi" cho kip bang mot loat tick lien tuc khong ghim.
+            next_tick = max(next_tick + tick_interval, time.time() - tick_interval)
             try:
                 self.session.world.tick()
             except RuntimeError as exc:
@@ -264,7 +278,8 @@ class SimLoop:
                 ns, checkpoint_path, self.cfg.learned_autopilot_device)
             self._il_predictor_cache = (checkpoint_path, contract, predict)
         _, contract, predict = self._il_predictor_cache
-        return LearnedAutopilotMode(protocol.MODE_IL_AUTOPILOT, ns, contract, predict)
+        return LearnedAutopilotMode(protocol.MODE_IL_AUTOPILOT, ns, contract, predict,
+                                    action_repeat=self._learned_action_repeat(contract))
 
     def _build_drl_mode(self):
         ns = self._get_drl_training()
@@ -283,7 +298,28 @@ class SimLoop:
                             resolved_algo, algo)
             self._drl_predictor_cache = (cache_key, contract, predict)
         _, contract, predict = self._drl_predictor_cache
-        return LearnedAutopilotMode(protocol.MODE_DRL_AUTOPILOT, ns, contract, predict)
+        return LearnedAutopilotMode(protocol.MODE_DRL_AUTOPILOT, ns, contract, predict,
+                                    action_repeat=self._learned_action_repeat(contract))
+
+    def _learned_action_repeat(self, contract):
+        """So world tick giu nguyen mot lenh de policy chay dung nhip `control_dt` cua
+        checkpoint IL. Vd sim_fps=20 + control_dt=0.2 -> 4 tick moi quyet dinh."""
+        control_dt = getattr(contract, "control_dt", None)
+        if not control_dt:
+            logger.warning("Checkpoint IL khong co 'control_dt' — chay policy moi tick "
+                            "(%.0f Hz). `previous_steer/longitudinal` se lech y nghia so "
+                            "voi luc train.", self.cfg.sim_fps)
+            return 1
+        repeat = max(1, int(round(float(control_dt) * self.cfg.sim_fps)))
+        actual_hz = self.cfg.sim_fps / repeat
+        logger.info("IL/DRL Autopilot: control_dt=%.2fs, sim_fps=%.1f -> action_repeat=%d "
+                    "(policy chay o %.2f Hz)", control_dt, self.cfg.sim_fps, repeat, actual_hz)
+        if abs(actual_hz - 1.0 / float(control_dt)) > 0.01:
+            logger.warning("sim_fps=%.1f khong chia het cho nhip %.2f Hz cua checkpoint — "
+                            "policy se chay o %.2f Hz. Dat --sim-fps la boi so cua %.2f.",
+                            self.cfg.sim_fps, 1.0 / float(control_dt), actual_hz,
+                            1.0 / float(control_dt))
+        return repeat
 
     def _ensure_town_graph(self):
         town = self.session.current_town_short()

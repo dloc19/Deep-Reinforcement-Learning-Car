@@ -14,12 +14,20 @@ import cv2
 import numpy as np
 
 
-def camera_blueprint(world, type_id, cfg):
+def camera_blueprint(world, type_id, cfg, width=None, height=None, sensor_tick=None):
+    """`sensor_tick=0.0` = fire on EVERY world tick.
+
+    That is what the segmentation camera needs: it is the policy's image input, and in
+    synchronous mode a `sensor_tick` coarser than `fixed_delta_seconds` makes the sensor skip
+    ticks, so `session.last_seg_class_map` would be a frame the car has already driven past.
+    The RGB camera is preview-only and keeps the publish-rate tick.
+    """
     bp = world.get_blueprint_library().find(type_id)
-    bp.set_attribute("image_size_x", str(cfg.camera_width))
-    bp.set_attribute("image_size_y", str(cfg.camera_height))
+    bp.set_attribute("image_size_x", str(width if width else cfg.camera_width))
+    bp.set_attribute("image_size_y", str(height if height else cfg.camera_height))
     bp.set_attribute("fov", str(cfg.camera_fov))
-    bp.set_attribute("sensor_tick", str(1.0 / cfg.publish_fps))
+    bp.set_attribute("sensor_tick",
+                     str(1.0 / cfg.publish_fps if sensor_tick is None else sensor_tick))
     return bp
 
 

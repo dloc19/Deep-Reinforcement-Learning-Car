@@ -7,6 +7,7 @@ whenever a camera frame is ready.
 
 import logging
 import random
+import time
 
 import carla
 import numpy as np
@@ -30,6 +31,7 @@ class CarlaSession:
         self.last_rgb_jpeg = None
         self.last_seg_jpeg = None
         self.last_seg_class_map = None   # (H, W) uint8 raw class-id map — IL/DRL Autopilot input
+        self._last_seg_publish = 0.0
 
     # ---------------------------------------------------------------- connect
     def connect(self):
@@ -47,9 +49,14 @@ class CarlaSession:
     def _enable_synchronous_mode(self):
         settings = self.world.get_settings()
         if self._original_settings is None:
+            # `or 0.0`: khi world dang chay bat dong bo (mac dinh), CARLA 0.9.10 tra ve
+            # fixed_delta_seconds = None, nhung constructor WorldSettings cua no chi nhan
+            # `double` — truyen None vao la Boost.Python.ArgumentError ngay luc connect().
+            # 0.0 chinh la gia tri "buoc thoi gian bien thien", tuc dung y nghia can khoi
+            # phuc luc shutdown().
             self._original_settings = carla.WorldSettings(
                 synchronous_mode=settings.synchronous_mode,
-                fixed_delta_seconds=settings.fixed_delta_seconds)
+                fixed_delta_seconds=settings.fixed_delta_seconds or 0.0)
         settings.synchronous_mode = True
         settings.fixed_delta_seconds = 1.0 / self.cfg.sim_fps
         self.world.apply_settings(settings)
@@ -129,7 +136,8 @@ class CarlaSession:
         self.rgb_sensor.listen(self._on_rgb_frame)
 
         seg_bp = cameras.camera_blueprint(
-            self.world, "sensor.camera.semantic_segmentation", self.cfg)
+            self.world, "sensor.camera.semantic_segmentation", self.cfg,
+            width=self.cfg.seg_width, height=self.cfg.seg_height, sensor_tick=0.0)
         self.seg_sensor = self.world.spawn_actor(
             seg_bp, transform, attach_to=self.ego, attachment_type=carla.AttachmentType.Rigid)
         self.seg_sensor.listen(self._on_seg_frame)
@@ -163,6 +171,16 @@ class CarlaSession:
         # data_collection/carla_collector/writer.py and drl_training's own camera callback.
         bgra = np.frombuffer(image.raw_data, dtype=np.uint8).reshape((image.height, image.width, 4))
         self.last_seg_class_map = bgra[:, :, 2].copy()
+
+        # Hai nhip KHAC NHAU cho cung mot camera:
+        #   - `last_seg_class_map` cap nhat MOI tick, vi day la dau vao cua policy (camera
+        #     nay dat sensor_tick=0.0 chinh vi the).
+        #   - JPEG chi ma hoa + gui o `publish_fps`. Truoc day moi tick deu encode va gui,
+        #     tuc ~175 khung/giay do vao WebSocket cho mot khung hinh chi de NGUOI xem.
+        now = time.time()
+        if now - self._last_seg_publish < 1.0 / self.cfg.publish_fps:
+            return
+        self._last_seg_publish = now
         jpeg = cameras.segmentation_image_to_jpeg(image, self.cfg.jpeg_quality)
         if jpeg:
             self.last_seg_jpeg = jpeg
@@ -170,6 +188,10 @@ class CarlaSession:
                 protocol.encode_binary_frame(protocol.CHANNEL_SEG, jpeg))
 
     def apply_camera_params(self, width=None, height=None, fov=None, fps=None):
+        # Only the RGB (preview) camera is resized from the UI. The segmentation camera is
+        # pinned to cfg.seg_width/seg_height because it is the policy's input — see the
+        # comment on those fields in config.py. Changing fov from the UI DOES affect it, and
+        # will silently degrade IL/DRL Autopilot; the IL contract assumes fov 90.
         if width:
             self.cfg.camera_width = width
         if height:

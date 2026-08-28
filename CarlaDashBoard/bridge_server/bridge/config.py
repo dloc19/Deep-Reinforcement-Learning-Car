@@ -27,6 +27,16 @@ class BridgeConfig:
     # --- Camera (mirrors carla_collector/config.py defaults) ---
     camera_width: int = 800
     camera_height: int = 450
+    # Segmentation camera resolution — deliberately NOT camera_width/height. This camera is
+    # not just a preview: its raw class-id buffer is the IL/DRL policy's only image input
+    # (see carla_session._on_seg_frame -> modes/learned_autopilot.py). The IL checkpoint was
+    # trained on 480x384 at fov 90, i.e. a 5:4 frame whose vertical FOV is ~77 deg. Feeding
+    # it a 16:9 frame (800x450, vertical FOV ~59 deg) and letting resize_class_map() squash
+    # that to 240x192 changes where the horizon and the lane lines land in the image —
+    # geometrically a different camera, with no error anywhere to say so. Keep this equal to
+    # the collector's camera.width/height (data_collection/collector_config.json).
+    seg_width: int = 480
+    seg_height: int = 384
     camera_fov: float = 90.0
     camera_x: float = 1.5
     camera_y: float = 0.0

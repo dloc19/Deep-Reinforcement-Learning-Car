@@ -9,18 +9,20 @@ through CSV).
 
 def build_payload(town, graph):
     nodes = []
-    for node_id, waypoint in graph.nodes.items():
-        loc = waypoint.transform.location
+    # `graph.nodes` anh xa node_id -> carla.Transform, KHONG phai carla.Waypoint:
+    # router_plan/graph_builder.py co y chi giu Transform ("chi giu Transform, khong giu ca
+    # Waypoint") de khong om hang nghin doi tuong Waypoint song. Vi vay road_id/section_id/
+    # lane_id/s khong con doc duoc o day va bi bo khoi payload — MapCanvas ben WPF chi ve
+    # tu x/y nen khong dung toi chung. Ban truoc doc `waypoint.transform.location` va nem
+    # AttributeError, lam /maps/{town} tra 503 vinh vien (minimap trong).
+    for node_id, transform in graph.nodes.items():
+        loc = transform.location
         nodes.append({
             "node_id": node_id,
-            "road_id": waypoint.road_id,
-            "section_id": waypoint.section_id,
-            "lane_id": waypoint.lane_id,
-            "s": round(waypoint.s, 2),
             "x": round(loc.x, 2),
             "y": round(loc.y, 2),
             "z": round(loc.z, 2),
-            "yaw_deg": round(waypoint.transform.rotation.yaw, 2),
+            "yaw_deg": round(transform.rotation.yaw, 2),
         })
 
     edges = []
