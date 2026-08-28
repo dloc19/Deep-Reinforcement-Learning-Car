@@ -51,6 +51,12 @@ def parse_args():
     parser.add_argument("--vehicle-id", type=int, default=0,
                         help="Gan truc tiep vao actor ID; 0=tu tim")
     parser.add_argument("--wait-vehicle-timeout", type=float, default=120.0)
+    parser.add_argument(
+        "--min-wheels", type=int, default=4,
+        help=("So banh toi thieu de mot chiec xe duoc chon lam ego. 4 = bo qua "
+              "xe dap va moto ma `automatic_control.py` co the boc trung khi no "
+              "chon blueprint ngau nhien. 0 = nhan tat ca. Khong ap dung khi da "
+              "ghim --vehicle-id."))
 
     camera = parser.add_argument_group("camera")
     # Mac dinh CLI phai TRUNG collector_config.json: neu khong, chay
@@ -102,9 +108,57 @@ def parse_args():
     runtime.add_argument("--duration", type=float, default=0.0,
                          help="So giay; 0=den khi Ctrl+C")
     runtime.add_argument("--max-samples", type=int, default=0,
-                         help="0=khong gioi han")
+                         help="So mau toi da cua MOT session; 0=khong gioi han")
     runtime.add_argument("--queue-size", type=int, default=32)
     runtime.add_argument("--no-event-sensors", action="store_true")
+
+    rebind = parser.add_argument_group("ego-rebind")
+    rebind_switch = rebind.add_mutually_exclusive_group()
+    rebind_switch.add_argument(
+        "--rebind-ego", dest="rebind_ego", action="store_true",
+        help=("Khi xe dang thu bi ket / bi huy / camera chet: go sensor ra, cho "
+              "mot chiec xe KHAC xuat hien (chay lai automatic_control.py) roi "
+              "gan sensor vao va thu tiep VAO CHINH SESSION DANG CHAY. Session "
+              "chi dong khi het --rebind-wait-s ma khong co xe nao."))
+    rebind_switch.add_argument(
+        "--no-rebind-ego", dest="rebind_ego", action="store_false",
+        help="Xe ket la dong session luon (hanh vi cu, de SessionRunner lo tiep)")
+    rebind.set_defaults(rebind_ego=True)
+    rebind.add_argument(
+        "--rebind-wait-s", type=float, default=300.0,
+        help=("Giay THUC cho mot chiec xe khac xuat hien truoc khi dong session. "
+              "Du de kip Ctrl+C roi chay lai automatic_control.py."))
+    rebind.add_argument(
+        "--max-rebinds", type=int, default=0,
+        help="So lan doi xe toi da trong MOT session; 0 = khong gioi han")
+
+    restart = parser.add_argument_group("auto-restart")
+    restart.add_argument(
+        "--total-samples", type=int, default=0,
+        help=("Muc tieu so mau cho CA BUOI thu thap, cong don qua nhieu session. "
+              "0 = chi chay mot session roi thoi (hanh vi cu). Dat cai nay lon "
+              "hon --max-samples de mot session bi watchdog nga khong lam mat "
+              "phan con lai cua buoi thu thap."))
+    auto = restart.add_mutually_exclusive_group()
+    auto.add_argument(
+        "--auto-restart", dest="auto_restart", action="store_true",
+        help=("Mo session moi khi session hien tai bi watchdog nga "
+              "(vehicle_stationary_timeout / no_samples_timeout / ego_destroyed). "
+              "Runner cho den khi ego thuc su chay lai roi moi mo session moi."))
+    auto.add_argument(
+        "--no-auto-restart", dest="auto_restart", action="store_false",
+        help="Hong session nao la dung buoi thu thap luon")
+    restart.set_defaults(auto_restart=False)
+    restart.add_argument(
+        "--max-restarts", type=int, default=0,
+        help="So lan khoi dong lai sau LOI toi da; 0 = khong gioi han")
+    restart.add_argument(
+        "--restart-wait-s", type=float, default=300.0,
+        help=("Giay THUC cho ego chay lai truoc khi bo cuoc. Cac quang ket cua "
+              "BehaviorAgent do duoc dai 25-45 s nen mac dinh de rong."))
+    restart.add_argument(
+        "--restart-settle-s", type=float, default=3.0,
+        help="Giay nghi giua hai session de sensor cu kip go xuong")
 
     dedup = parser.add_argument_group("dedup")
     dedup.add_argument(
@@ -120,6 +174,37 @@ def parse_args():
         "--dedup-min-interval-s", type=float, default=1.0,
         help=("So giay toi thieu giua 2 mau dung yen/hanh dong khong doi lien tiep "
               "duoc GIU LAI; chi co hieu luc khi --dedup-stationary-speed > 0"))
+    watchdog = parser.add_argument_group("watchdog")
+    watchdog.add_argument(
+        "--stall-timeout-s", type=float, default=60.0,
+        help=("Giay THUC khong co mau moi nao thi dung session. Bat truong hop "
+              "camera ngung goi callback trong khi ego van song, luc do ego.is_alive "
+              "van True nen vong lap chinh khong tu phat hien duoc (mot session "
+              "Town03 da chay 15 phut thuc ma chi ghi duoc 102 giay dau). 0 = tat."))
+    watchdog.add_argument(
+        "--stationary-timeout-s", type=float, default=60.0,
+        help=("Giay SIM xe dung yen lien tuc thi dung session. Bat truong hop "
+              "BehaviorAgent phanh khan cap roi khong bao gio nha (mot session "
+              "Town03 dung yen 344 s = 96%% session, di duoc 76 m). Phai dat LON HON "
+              "lan cho den do lau nhat cua ban, neu khong se dung nham. 0 = tat."))
+    watchdog.add_argument(
+        "--camera-timeout-s", type=float, default=10.0,
+        help=("Giay THUC camera khong gui anh nao (trong khi world VAN tick) thi "
+              "gan lai camera vao chinh chiec xe do. Bat rieng truong hop camera "
+              "chet ma xe van chay - truoc day phai doi het --stall-timeout-s "
+              "(60 s) roi doi xe, va chiec 'xe moi' tim duoc thuong la chinh no. "
+              "0 = tat."))
+    watchdog.add_argument(
+        "--ego-missing-timeout-s", type=float, default=3.0,
+        help=("Giay THUC ego vang mat khoi world snapshot thi coi nhu da bi huy. "
+              "`actor.is_alive` la co cua RIENG client nay nen no van True khi "
+              "client khac (automatic_control.py) huy chiec hero; day la cach "
+              "duy nhat thay dieu do ma khong phai cho het 60 s. 0 = tat."))
+    watchdog.add_argument(
+        "--stall-speed", type=float, default=0.3,
+        help=("m/s; duoi nguong nay watchdog coi la xe dung yen. Doc lap voi "
+              "--dedup-stationary-speed de watchdog van chay khi dedup da tat."))
+
     _apply_config_file(parser)
     args = parser.parse_args()
 
@@ -135,6 +220,26 @@ def parse_args():
         parser.error("--dedup-action-eps phai >= 0")
     if args.dedup_min_interval_s < 0:
         parser.error("--dedup-min-interval-s phai >= 0")
+    for flag in ("stall_timeout_s", "stationary_timeout_s", "stall_speed",
+                 "camera_timeout_s", "ego_missing_timeout_s",
+                 "restart_wait_s", "restart_settle_s", "rebind_wait_s"):
+        if getattr(args, flag) < 0:
+            parser.error("--%s phai >= 0" % flag.replace("_", "-"))
+    if args.min_wheels < 0:
+        parser.error("--min-wheels phai >= 0")
+    if args.max_rebinds < 0:
+        parser.error("--max-rebinds phai >= 0")
+    if args.total_samples < 0:
+        parser.error("--total-samples phai >= 0")
+    if args.max_restarts < 0:
+        parser.error("--max-restarts phai >= 0")
+    if args.total_samples and args.max_samples > args.total_samples:
+        parser.error("--max-samples (%d) khong duoc lon hon --total-samples (%d)"
+                     % (args.max_samples, args.total_samples))
+    if args.auto_restart and not args.total_samples:
+        # Khong co muc tieu tong thi khoi dong lai bao nhieu lan cung khong biet
+        # khi nao la du - session moi se chay den khi bi nga lan nua, mai mai.
+        parser.error("--auto-restart can --total-samples > 0 de biet khi nao dung")
     if (args.goal_x is None) != (args.goal_y is None):
         parser.error("Phai truyen dong thoi --goal-x va --goal-y")
     if args.goal_spawn_index >= 0 and args.goal_x is not None:

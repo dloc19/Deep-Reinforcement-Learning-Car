@@ -13,6 +13,7 @@ def write_metadata(path, world, world_map, ego, args, session_id,
                    goal_waypoint, map_graph_stats):
     fx = args.width / (2.0 * math.tan(math.radians(args.fov) / 2.0))
     weather = world.get_weather()
+    settings = world.get_settings()
     weather_fields = [
         "cloudiness", "precipitation", "precipitation_deposits", "wind_intensity",
         "sun_azimuth_angle", "sun_altitude_angle", "fog_density", "fog_distance",
@@ -24,10 +25,51 @@ def write_metadata(path, world, world_map, ego, args, session_id,
         "session_id": session_id,
         "episode_id": getattr(world, "id", ""),
         "map": world_map.name,
+        # Chiec ego DAU TIEN cua session. Voi `--rebind-ego` (mac dinh bat), mot
+        # session co the di qua nhieu chiec xe khi xe dang thu bi ket: xem
+        # summary.json -> ego_segments, va cot `vehicle_id` cua tung dong trong
+        # states.csv, de biet dong nao thuoc chiec nao.
         "vehicle_id": ego.id,
         "vehicle_type": ego.type_id,
         "role_name": ego.attributes.get("role_name", ""),
+        "ego_rebind": {
+            "enabled": bool(getattr(args, "rebind_ego", False)),
+            "wait_s": getattr(args, "rebind_wait_s", 0.0),
+            "max_rebinds": getattr(args, "max_rebinds", 0),
+        },
+        # Nguong watchdog cua luc THU: mot session it mau hay dut doan chi doc
+        # duoc neu biet luc do collector duoc phep cho bao lau.
+        "watchdog": {
+            "stall_timeout_s": getattr(args, "stall_timeout_s", 0.0),
+            "stationary_timeout_s": getattr(args, "stationary_timeout_s", 0.0),
+            "camera_timeout_s": getattr(args, "camera_timeout_s", 0.0),
+            "ego_missing_timeout_s": getattr(args, "ego_missing_timeout_s", 0.0),
+            "stall_speed_mps": getattr(args, "stall_speed", 0.0),
+            "min_wheels": getattr(args, "min_wheels", 0),
+        },
         "collector_mode": "passive_async_client_no_world_tick",
+        # The collector does not own the world, so it cannot set the timestep. On
+        # an asynchronous, variable-timestep world the cameras' `sensor_tick` is
+        # not honoured (a 5 FPS session was measured writing 22.7 samples per
+        # simulated second), so the rate is enforced client-side by
+        # synchronizer.SampleRateLimiter. Record what the world was actually doing
+        # - `camera.fps` below is the REQUESTED rate; `summary.json` records the
+        # rate that was achieved.
+        "world_settings": {
+            "synchronous_mode": bool(getattr(settings, "synchronous_mode", False)),
+            "fixed_delta_seconds": getattr(settings, "fixed_delta_seconds", None),
+            "no_rendering_mode": bool(getattr(settings, "no_rendering_mode", False)),
+        },
+        "sampling_rate_enforced_by": "client_side_sim_time_decimation",
+        # Dedup xoa nguyen mau khoi states.csv, nen `throughput_fps` cua mot session
+        # co dedup thap hon fps yeu cau mot cach hop le. Ghi lai nguong o day de doc
+        # so lieu session ma khong phai doan xem luc thu da bat gi.
+        "dedup": {
+            "stationary_speed_mps": args.dedup_stationary_speed,
+            "action_eps": args.dedup_action_eps,
+            "min_interval_s": args.dedup_min_interval_s,
+            "enabled": args.dedup_stationary_speed > 0.0,
+        },
         "modalities": {
             "semantic_label": True,
             "rgb": args.image_mode == "seg-rgb",

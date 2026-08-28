@@ -18,6 +18,8 @@ def main():
     parser.add_argument("session", help="Thu muc TownXX_YYYYMMDD_HHMMSS")
     parser.add_argument("--strict", action="store_true",
                         help="Bao loi neu seg_label chua tag ngoai dai raw CARLA 0..22")
+    parser.add_argument("--fps-tolerance", type=float, default=0.10,
+                        help="Sai so tuong doi cho phep giua FPS do duoc va camera.fps")
     args = parser.parse_args()
 
     root = Path(args.session).resolve()
@@ -93,10 +95,68 @@ def main():
                     errors.append("Dong %d: %s khong phai JSON list hop le" % (line_no, key))
             rows.append(row)
 
+    # Buoc thoi gian giua hai mau LA thang do cua previous_steer /
+    # previous_longitudinal, khong phai metadata trang tri. Collector chay nhu mot
+    # client thu dong tren world async nen `sensor_tick` KHONG dam bao dieu do: mot
+    # session dat 5 FPS da tung ghi ra 22.7 mau/giay sim ma khong co canh bao nao.
+    # Nhip that su duoc ep boi synchronizer.SampleRateLimiter, nen o day chi can
+    # kiem tra lai ket qua.
+    #
+    # Do bang CADENCE (trung vi khoang cach giua hai mau), KHONG phai rows/span:
+    # bo loc dedup xoa han cac mau dung yen, nen throughput tut xuong duoi fps yeu
+    # cau mot cach hop le (do duoc 3.57 thay vi 5.00 tren mot session Town01 that,
+    # trong khi limiter van cho qua dung 5.000 mau/giay). Trung vi khong bi anh
+    # huong boi nhung khoang trong do.
+    measured = {}
+    sim_times = []
+    for row in rows:
+        try:
+            sim_times.append(float(row.get("sim_time_s") or 0.0))
+        except ValueError:
+            pass
+    requested_fps = (metadata.get("camera") or {}).get("fps")
+    if len(sim_times) >= 3 and sim_times[-1] > sim_times[0]:
+        gaps = sorted(b - a for a, b in zip(sim_times, sim_times[1:]))
+        median_gap = gaps[len(gaps) // 2]
+        span = sim_times[-1] - sim_times[0]
+        measured = {
+            "cadence_fps": round(1.0 / median_gap, 3) if median_gap > 0 else None,
+            "throughput_fps": round((len(sim_times) - 1) / span, 3),
+            "gap_seconds": {"min": round(gaps[0], 4),
+                            "median": round(median_gap, 4),
+                            "max": round(gaps[-1], 4)},
+        }
+        if requested_fps:
+            period = 1.0 / requested_fps
+            # Dedup bo NGUYEN mau, nen gap con lai luon la BOI SO nguyen cua chu ky.
+            # Gap lech khoi luoi do moi la dau hieu nhip that su khong on dinh - day
+            # la thu phan biet "dedup dang lam viec" voi "sensor_tick da tuot".
+            off_grid = [g for g in gaps
+                        if abs(g / period - round(g / period)) > 0.25]
+            measured["off_grid_gap_fraction"] = round(len(off_grid) / len(gaps), 4)
+            if median_gap > 0:
+                deviation = abs(median_gap - period) / period
+                if deviation > args.fps_tolerance:
+                    errors.append(
+                        "Nhip lay mau lech: metadata ghi %.2f FPS (chu ky %.3f s) "
+                        "nhung trung vi khoang cach mau la %.3f s (%.2f FPS, lech "
+                        "%.0f%%). previous_steer/previous_longitudinal se sai thang "
+                        "do; KHONG dung session nay de train." % (
+                            requested_fps, period, median_gap, 1.0 / median_gap,
+                            100 * deviation))
+            if len(off_grid) > 0.05 * len(gaps):
+                errors.append(
+                    "%.1f%% khoang cach mau khong roi vao boi so cua %.3f s. Dedup "
+                    "chi xoa nguyen mau nen khong gay ra dieu nay; nhip lay mau dang "
+                    "that su khong on dinh." % (
+                        100.0 * len(off_grid) / len(gaps), period))
+
     report = {
         "session": str(root), "rows": len(rows), "unique_frames": len(frames),
         "first_frame": min(frames) if frames else None,
         "last_frame": max(frames) if frames else None,
+        "requested_fps": requested_fps,
+        "measured": measured,
         "astar_graph_exported": bool(graph.get("exported")),
         "astar_nodes": graph.get("node_count", 0),
         "astar_edges": graph.get("edge_count", 0),

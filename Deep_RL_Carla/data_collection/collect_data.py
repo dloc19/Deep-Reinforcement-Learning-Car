@@ -3,28 +3,28 @@
 
 import signal
 
-from carla_collector.collector import CarlaCollector
 from carla_collector.config import parse_args
+from carla_collector.runner import SessionRunner
 
 
 def main():
-    collector = CarlaCollector(parse_args())
+    # SessionRunner bao mot hoac nhieu CarlaCollector. Voi --total-samples = 0
+    # (mac dinh) no chay dung mot session roi thoat, y het hanh vi cu.
+    runner = SessionRunner(parse_args())
 
     def stop_handler(_signum, _frame):
-        collector.stop_event.set()
+        runner.request_stop("user_interrupt")
 
     signal.signal(signal.SIGINT, stop_handler)
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, stop_handler)
     try:
-        collector.run()
+        runner.run()
     except KeyboardInterrupt:
-        collector.stop_event.set()
+        runner.request_stop("user_interrupt")
     except Exception as exc:
         print("LOI: %s" % exc)
         raise
-    finally:
-        collector.cleanup()
 
 
 if __name__ == "__main__":

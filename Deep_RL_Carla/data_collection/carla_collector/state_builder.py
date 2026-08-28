@@ -12,7 +12,7 @@ from .map_export import junction_id
 
 class StateBuilder:
     def __init__(self, world, world_map, ego, args, events, session_id,
-                 goal_waypoint=None):
+                 goal_waypoint=None, distance_travelled_m=0.0):
         self.world = world
         self.map = world_map
         self.ego = ego
@@ -20,8 +20,12 @@ class StateBuilder:
         self.events = events
         self.session_id = session_id
         self.goal_waypoint = goal_waypoint
+        # `last_location` bat dau lai tu None con quang duong thi cong don tiep:
+        # khi session doi sang mot chiec xe khac, `distance_travelled_m` van la
+        # quang duong cua CA SESSION, nhung cho xe moi spawn cach cho xe cu ket
+        # hang tram met - khoang do khong duoc tinh la da di.
         self.last_location = None
-        self.distance_travelled_m = 0.0
+        self.distance_travelled_m = distance_travelled_m
 
     def select_next_waypoint(self, waypoint):
         candidates = waypoint.next(self.args.lookahead_m)
@@ -43,8 +47,22 @@ class StateBuilder:
             records.append(record)
         return records
 
-    def build(self, world_snapshot):
-        actor_snapshot = world_snapshot.find(self.ego.id)
+    def track_odometry(self, actor_snapshot):
+        """Cong don quang duong o MOI world tick, khong phai chi o cac tick duoc
+        chon lam mau.
+
+        Tach khoi `build()` vi ke tu khi FrameGate loc tu dau vao, `build()` chi
+        chay ~5 lan/giay chu khong con moi tick; do quang duong o nhip do se cat
+        goc moi khuc cua va lam `distance_travelled_m` thieu di.
+        """
+        location = actor_snapshot.get_transform().location
+        if self.last_location is not None:
+            self.distance_travelled_m += location_distance(location, self.last_location)
+        self.last_location = carla.Location(x=location.x, y=location.y, z=location.z)
+
+    def build(self, world_snapshot, actor_snapshot=None):
+        if actor_snapshot is None:
+            actor_snapshot = world_snapshot.find(self.ego.id)
         if actor_snapshot is None:
             return None
         transform = actor_snapshot.get_transform()
@@ -55,9 +73,6 @@ class StateBuilder:
         control = self.ego.get_control()
         collisions, invasions = self.events.snapshot()
 
-        if self.last_location is not None:
-            self.distance_travelled_m += location_distance(location, self.last_location)
-        self.last_location = carla.Location(x=location.x, y=location.y, z=location.z)
         yaw = math.radians(transform.rotation.yaw)
         forward_speed = velocity.x * math.cos(yaw) + velocity.y * math.sin(yaw)
         lateral_speed = -velocity.x * math.sin(yaw) + velocity.y * math.cos(yaw)

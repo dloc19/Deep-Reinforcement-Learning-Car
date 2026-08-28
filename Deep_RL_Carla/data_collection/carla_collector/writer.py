@@ -14,7 +14,8 @@ from .schema import CSV_FIELDS, SEG_COLOR_LUT
 class DatasetWriter(threading.Thread):
     def __init__(self, session_dir, packet_queue, stop_event, save_rgb,
                  save_seg_color, max_samples=0, dedup_stationary_speed=0.0,
-                 dedup_action_eps=0.02, dedup_min_interval_s=1.0):
+                 dedup_action_eps=0.02, dedup_min_interval_s=1.0,
+                 stall_speed=0.3):
         super().__init__(daemon=True)
         self.session_dir = session_dir
         self.packet_queue = packet_queue
@@ -25,12 +26,91 @@ class DatasetWriter(threading.Thread):
         self.dedup_stationary_speed = dedup_stationary_speed
         self.dedup_action_eps = dedup_action_eps
         self.dedup_min_interval_s = dedup_min_interval_s
+        # Watchdog nguong rieng, KHONG dung chung voi dedup: tat dedup van phai
+        # phat hien duoc xe dung yen vinh vien.
+        self.stall_speed = stall_speed
+        self.latest_sim_time = None
+        self.last_moving_sim_time = None
         self.samples = 0
         self.duplicates_skipped = 0
         self.error = None
         self.previous_action = None
         self.previous_sim_time = None
         self.last_kept_sim_time = None
+        self.first_sim_time = None
+        # So doan (moi chiec ego mot doan) va tong span cua cac doan da dong lai;
+        # xem begin_new_segment.
+        self.segments = 1
+        self.span_accum = 0.0
+        # Frame CARLA cua mau cuoi cung da ghi. Collector doc no de nhan ra world
+        # da bi load lai (frame counter tut ve 0) truoc khi ghi de len anh cu.
+        self.last_frame = 0
+        # Bat len khi collector doi sang mot chiec xe khac; chinh writer thread
+        # ap dung o packet ke tiep, de mot packet cua xe cu con dang duoc ghi
+        # khong kip ghi de len cac moc vua reset.
+        self.segment_break = False
+
+    def begin_new_segment(self):
+        """Bao rang cac mau sau day den tu MOT CHIEC XE KHAC.
+
+        Goi khi collector go sensor khoi ego cu va gan sang ego moi trong cung
+        mot session. Cat chuoi lien tuc cua `previous_steer`/`previous_longitudinal`
+        va cua dong ho dung yen: hai chiec xe khac nhau khong noi thanh mot chuoi
+        dieu khien, va quang cho xe moi khong phai la quang xe dung yen.
+        """
+        self.segment_break = True
+
+    def _apply_segment_break(self):
+        if self.first_sim_time is not None and self.last_kept_sim_time is not None:
+            # Nhip lay mau chi co nghia TRONG mot doan; quang cho xe moi (co the
+            # hang phut) khong duoc tinh vao span, neu khong measured_fps se tut
+            # xuong ma khong co mau nao that su bi mat.
+            self.span_accum += max(0.0, self.last_kept_sim_time - self.first_sim_time)
+            self.segments += 1
+        self.first_sim_time = None
+        self.last_kept_sim_time = None
+        self.previous_action = None
+        self.previous_sim_time = None
+        self.latest_sim_time = None
+        self.last_moving_sim_time = None
+        self.segment_break = False
+
+    def sim_time_span(self):
+        """Simulated seconds covered by the samples actually written."""
+        span = self.span_accum
+        if self.first_sim_time is not None and self.last_kept_sim_time is not None:
+            span += max(0.0, self.last_kept_sim_time - self.first_sim_time)
+        return span
+
+    def stationary_seconds(self):
+        """So giay SIM ke tu lan cuoi ego con di chuyen.
+
+        Do o day chu khong o collector vi writer la cho duy nhat nhin thay MOI
+        packet da ghep - ke ca packet bi dedup bo di. Neu do bang `samples` thi
+        mot xe dung yen vinh vien voi dedup bat van sinh ~1 mau/giay va watchdog
+        se khong bao gio kich hoat.
+        """
+        if self.segment_break:
+            # Dang doi xe: dong ho cua chiec xe cu khong con y nghia gi nua.
+            return 0.0
+        if self.latest_sim_time is None or self.last_moving_sim_time is None:
+            return 0.0
+        return max(0.0, self.latest_sim_time - self.last_moving_sim_time)
+
+    def measured_fps(self):
+        """Samples per SIMULATED second, as actually written to disk.
+
+        The collector cannot set the world's timestep, so `--fps` is a request,
+        not a guarantee - report what was achieved so a bad session is visible
+        while it is still running instead of at training time.
+        """
+        span = self.sim_time_span()
+        # Moi doan (moi chiec xe) chi dong gop `so_mau - 1` khoang cach, nen tru
+        # theo so doan chu khong phai tru 1.
+        intervals = self.samples - self.segments
+        if span <= 0.0 or intervals < 1:
+            return 0.0
+        return intervals / span
 
     @staticmethod
     def decode_bgra(raw_data, width, height):
@@ -81,6 +161,9 @@ class DatasetWriter(threading.Thread):
 
     def write_packet(self, packet, csv_writer):
         """Ghi mot mau (anh + dong CSV). Tra ve False neu mau bi bo qua vi trung lap."""
+        if self.segment_break:
+            self._apply_segment_break()
+
         state = packet["state"]
         frame = int(state["frame"])
         stem = "%08d" % frame
@@ -89,6 +172,14 @@ class DatasetWriter(threading.Thread):
         current_longitudinal = float(state.get("longitudinal", 0.0))
         current_sim_time = float(state.get("sim_time_s", 0.0))
         speed_mps = float(state.get("speed_mps", 0.0))
+
+        # Cap nhat TRUOC khi kiem tra trung lap, de mau bi dedup bo van tinh vao
+        # watchdog. Packet dau tien lam moc, neu khong thi mot ego dung yen ngay
+        # tu dau se giu last_moving_sim_time = None mai mai.
+        self.latest_sim_time = current_sim_time
+        if self.last_moving_sim_time is None or speed_mps >= self.stall_speed:
+            self.last_moving_sim_time = current_sim_time
+
         if self.previous_action is None:
             previous_steer = current_steer
             previous_longitudinal = current_longitudinal
@@ -150,6 +241,9 @@ class DatasetWriter(threading.Thread):
         csv_writer.writerow({field: state.get(field, "") for field in CSV_FIELDS})
         self.previous_action = (current_steer, current_longitudinal)
         self.previous_sim_time = current_sim_time
+        if self.first_sim_time is None:
+            self.first_sim_time = current_sim_time
         self.last_kept_sim_time = current_sim_time
+        self.last_frame = frame
         self.samples += 1
         return True

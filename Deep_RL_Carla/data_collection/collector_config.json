@@ -5,10 +5,11 @@
     "timeout": 30.0,
     "role_name": "hero",
     "vehicle_id": 0,
-    "wait_vehicle_timeout": 120.0
+    "wait_vehicle_timeout": 120.0,
+    "min_wheels": 4
   },
   "dataset": {
-    "output": "D:/CARLA_DATA"
+    "output": "D:/CARLA_DATA_V2"
   },
   "camera": {
     "image_mode": "seg-rgb",
@@ -24,9 +25,21 @@
   },
   "collection": {
     "max_samples": 10000,
+    "total_samples": 10000,
     "duration": 0.0,
     "queue_size": 64,
     "no_event_sensors": false
+  },
+  "rebind": {
+    "rebind_ego": true,
+    "rebind_wait_s": 300.0,
+    "max_rebinds": 0
+  },
+  "auto_restart": {
+    "auto_restart": true,
+    "max_restarts": 20,
+    "restart_wait_s": 300.0,
+    "restart_settle_s": 3.0
   },
   "astar": {
     "lookahead_m": 5.0,
@@ -40,8 +53,15 @@
     "goal_z": 0.0
   },
   "dedup": {
-    "dedup_stationary_speed": 0.3,
+    "dedup_stationary_speed": 0.0,
     "dedup_action_eps": 0.02,
     "dedup_min_interval_s": 1.0
+  },
+  "watchdog": {
+    "stall_timeout_s": 60.0,
+    "stationary_timeout_s": 60.0,
+    "camera_timeout_s": 10.0,
+    "ego_missing_timeout_s": 3.0,
+    "stall_speed": 0.3
   }
 }

@@ -22,6 +22,8 @@ carla_data_pipeline/
     ├── state_builder.py            # trạng thái xe, làn, goal
     ├── map_export.py               # OpenDRIVE và graph A*
     ├── metadata.py                 # metadata.json
+    ├── ego_watch.py                # tìm ego / chờ một chiếc xe dùng được
+    ├── runner.py                   # chuỗi session của cả buổi thu thập
     └── collector.py                # điều phối toàn bộ pipeline
 ```
 
@@ -35,6 +37,8 @@ Vị trí cần sửa thường gặp:
 | Thêm trạng thái hoặc nhãn học | `state_builder.py` |
 | Đổi graph/cost A* | `map_export.py` |
 | Đổi cách đồng bộ frame | `synchronizer.py` |
+| Đổi điều kiện nhận một chiếc xe là "chạy được" | `ego_watch.py` |
+| Đổi cách đổi xe / mở session mới khi kẹt | `collector.py`, `runner.py` |
 | Đổi trình tự kết nối/chạy/dừng | `collector.py` |
 
 Không cần sửa `collect_data.py` trừ khi muốn đổi cách khởi động chương trình.
@@ -43,7 +47,9 @@ Không cần sửa `collect_data.py` trừ khi muốn đổi cách khởi độn
 
 File `collector_config.json` mặc định lưu đồng thời `rgb`, `seg_label` và
 `seg_color` (vì `image_mode: seg-rgb` và `save_seg_color: true`), ở độ phân giải
-480×384, thu đúng **10.000 mẫu hợp lệ mỗi map** rồi tự dừng. Collector spawn cả
+480×384, thu đúng **10.000 mẫu hợp lệ mỗi map** rồi tự dừng — cộng dồn qua nhiều
+session (`total_samples: 10000`, tối đa `max_samples: 2500` mỗi session) để một
+lần watchdog nổ không làm mất cả buổi. Collector spawn cả
 semantic camera lẫn RGB camera trong chế độ này. Ở 5 FPS, thời gian lý thuyết
 khoảng 33 phút 20 giây/map. Town01–04 cho 40.000 mẫu train, Town05 cho 10.000 mẫu
 val — đúng con số `EXPECT_TRAIN`/`EXPECT_VAL` mà hai notebook train kiểm tra.
@@ -54,6 +60,116 @@ val — đúng con số `EXPECT_TRAIN`/`EXPECT_VAL` mà hai notebook train kiể
 > `previous_steer ≈ steer` và model IL đạt loss thấp bằng cách chép lại nó, bỏ qua
 > hoàn toàn ảnh segmentation (copycat/causal confusion — không hiện ra trong val loss).
 > Khi train DRL, đặt `fixed_delta_seconds` của CARLA đúng bằng 0.2 s.
+
+> **`sensor_tick` một mình KHÔNG giữ được 5 FPS.** Collector là client thụ động trên
+> world async, variable-timestep do `automatic_control.py` sở hữu; ở đó CARLA không
+> tôn trọng `sensor_tick`. Một session Town01 đặt 5 FPS đã đo được **22.7 mẫu/giây
+> sim**, khoảng cách giữa hai mẫu dao động 0.011–1.027 s. Vì vậy nhịp lấy mẫu được
+> ép ở phía client bằng `synchronizer.SampleRateLimiter` (chặn theo `sim_time_s` của
+> chính packet đã ghép). `metadata.json` ghi FPS *yêu cầu*, `summary.json` ghi FPS
+> *đo được*, và `verify_dataset.py` báo lỗi nếu hai con số lệch quá 10%.
+
+> **Collector tự dừng khi session hỏng (watchdog).** Trước đây vòng lặp chính chỉ
+> thoát khi ego bị destroy, hết `duration`, hoặc writer lỗi — không cái nào bắt được
+> hai kiểu hỏng đã gặp thật:
+>
+> 1. **Camera ngừng gửi ảnh** trong khi ego vẫn `is_alive`. Một session Town03 chạy
+>    **15 phút thực** nhưng chỉ ghi được **102 giây đầu**; 99.967 frame chỉ có state,
+>    không có ảnh nào ghép cùng frame.
+> 2. **Agent phanh khẩn cấp rồi không bao giờ nhả.** Một session Town03 khác đi được
+>    **76 m** rồi đứng yên **344 giây liên tục (96% session)** với
+>    `throttle=0, brake=1.0, steer=0.0`, không đèn đỏ, không va chạm.
+>
+> `stall_timeout_s` bắt (1) theo giây **thực**, `stationary_timeout_s` bắt (2) theo
+> giây **sim**. Lý do dừng được ghi vào `summary.json` → `stop_reason`.
+
+> **Chờ 60 giây mới nhận ra hỏng là quá đắt.** Đo trên session
+> `Town03_20260824_082122_987768` (4906/10000 mẫu, 24 phút thực): 8 lần đổi xe,
+> **7 lần vì `no_samples_timeout`**, và mỗi lần để lại đúng một lỗ **61–70 giây
+> sim** trong `states.csv` — tổng cộng **~8 phút chết trên 24 phút chạy (33%)**.
+> Cả 8 lỗ đều dài xấp xỉ `stall_timeout_s`, tức là thời gian đó không phải chờ xe
+> mới mà là chờ **phát hiện ra** rằng đã hỏng. Hai kiểu hỏng đó giờ có watchdog
+> riêng, nhanh hơn một bậc:
+>
+> - `ego_missing_timeout_s` (mặc định 3 s). `actor.is_alive` là cờ của **riêng
+>   client này**: khi `automatic_control.py` hủy chiếc hero cũ để spawn chiếc mới,
+>   cờ đó vẫn `True` mãi mãi và collector không hề biết xe đã biến mất. Bằng chứng
+>   thật là ego **vắng mặt khỏi `WorldSnapshot`** — vắng liên tục quá ngưỡng này
+>   thì coi như đã bị hủy và đổi xe ngay.
+> - `camera_timeout_s` (mặc định 10 s). Camera im trong khi world **vẫn tick** là
+>   hỏng của riêng camera, không phải của xe: trong session trên, hai lần "đổi xe"
+>   tìm ra đúng chiếc xe cũ (id 124 → 124, 137 → 137) vì chiếc xe đó chưa bao giờ
+>   hỏng cả. Giờ collector **thay bộ camera ngay trên chiếc xe đang bám**, giữ
+>   nguyên ego và bộ đếm quãng đường, mất vài chục mili giây thay vì hơn một phút.
+>   Thay hai lần liên tiếp mà vẫn không ra mẫu nào thì mới leo thang thành
+>   `camera_dead` và đổi xe thật. `summary.json` → `camera_restarts` đếm số lần.
+>
+> `stall_timeout_s` vẫn còn, nhưng lùi về vai trò lưới an toàn cuối cùng.
+
+> **Lọc xe 2 bánh (`min_wheels`, mặc định 4).** `automatic_control.py` bốc
+> blueprint ngẫu nhiên trong `vehicle.*`, nên chiếc "hero" nó tạo ra có thể là xe
+> đạp hoặc mô tô. Trong session trên, **992/4906 mẫu (20%)** quay từ
+> `vehicle.gazelle.omafiets` (xe đạp) và `vehicle.kawasaki.ninja` (mô tô): động
+> học khác hẳn ô tô, camera đặt ở `z=2.4` không còn nằm trên mui xe, và IL/DRL
+> phải học lẫn lộn hai kiểu điều khiển. Collector giờ bỏ qua mọi ứng viên có
+> `number_of_wheels < min_wheels`. Chắc ăn hơn nữa thì chạy
+> `automatic_control.py --filter vehicle.tesla.model3` để hero luôn là cùng một xe.
+
+> **Chạy `automatic_control.py` với `--loop`.** Không có cờ đó, script thoát ngay
+> khi agent tới đích (`automatic_control.py` dòng 749: *"Target reached, mission
+> accomplished..."*) và chiếc hero bị hủy theo — đúng 7 lần trong session
+> `Town03_20260824_082122_987768`, mỗi lần collector mất một phút mới nhận ra rồi
+> lại chờ bạn khởi động script bằng tay. Với `-l/--loop`, agent tự chọn đích mới
+> (`agent.reroute`) và chạy liên tục. Lệnh nên dùng:
+>
+> ```bash
+> python automatic_control.py --loop --filter vehicle.tesla.model3
+> ```
+>
+> Thêm `--behavior aggressive` nếu muốn xe dừng ít hơn (khoảng cách an toàn ngắn
+> hơn, bám tốc độ giới hạn sát hơn) — nhưng nhớ rằng đó chính là kiểu lái mà IL sẽ
+> học theo, nên đừng trộn nhiều `--behavior` khác nhau trong cùng một bộ dữ liệu.
+
+> **Watchdog nổ chỉ kết thúc một session, không kết thúc cả buổi thu thập.**
+> Collector là client *thụ động* — nó không lái xe, `automatic_control.py`
+> (BehaviorAgent) mới lái, và agent đó kẹt thường xuyên. Đo trên một session Town03
+> thật: các quãng đứng yên 12 s, 3 s, **39 s**, 25 s, 5 s, 17 s xen kẽ nhau, không
+> quãng nào liên quan tới đèn đỏ (`traffic_light_state = Unknown` suốt cả quãng).
+> Sớm muộn sẽ có một quãng vượt 60 s và watchdog giết session — đúng, nhưng ngày
+> trước điều đó làm mất luôn phần còn lại của buổi thu thập: 4/10 session trong
+> `D:/CARLA_DATA_V2` chết ở mức 485–1826 mẫu trên mục tiêu 10000.
+>
+> Có **hai lớp** cứu buổi thu thập, lớp trong chạy trước:
+>
+> **Lớp 1 — đổi xe ngay trong session đang chạy (`--rebind-ego`, mặc định bật).**
+> Watchdog nổ không còn đóng session nữa. Collector gỡ camera khỏi chiếc xe kẹt,
+> **chờ một chiếc xe khác xuất hiện** (bạn Ctrl+C `automatic_control.py` rồi chạy
+> lại nó để tạo hero mới), gắn camera vào chiếc xe đó và **ghi tiếp vào đúng
+> session cũ** — cùng thư mục, cùng `states.csv`, `sample_id` chạy tiếp, không
+> sinh thêm session vụn. Đây là thứ thay đổi nhiều nhất trong thực tế: mục tiêu
+> 10.000 mẫu giờ nằm trong **một** thư mục thay vì rải ra 5–6 thư mục 500–2000 mẫu.
+>
+> **Lớp 2 — mở session mới (`SessionRunner` trong `carla_collector/runner.py`).**
+> Chỉ vào cuộc khi lớp 1 bó tay: hết `rebind_wait_s` mà không có xe nào
+> (`rebind_timeout`), world bị `load_world()` (`world_reloaded`, frame counter về
+> 0 nên không ghi chung thư mục được nữa), hoặc lỗi lúc khởi động session. Nó chờ
+> ego chạy lại rồi mở session mới và cộng dồn số mẫu cho tới khi đủ
+> `total_samples`. Bật bằng `collection.total_samples` + `auto_restart.auto_restart`.
+>
+> Điều kiện nhận một chiếc xe (chung cho cả hai lớp, xem `ego_watch.pick_ego`):
+> frame number của world phải **tăng** giữa hai lần poll, và
+>
+> - xe có `id` **khác** chiếc vừa kẹt → nhận ngay (xe mới spawn thì đứng yên vài
+>   frame đầu là bình thường). Bước lọc theo `id` này là bắt buộc: chiếc hero cũ
+>   còn nằm đó thêm vài giây sau khi bạn dừng `automatic_control.py`, không lọc
+>   thì collector gắn camera vào lại đúng chiếc xe vừa kẹt.
+> - vẫn là chiếc xe cũ (hoặc `--vehicle-id` ghim cứng một id) → phải thấy tốc độ
+>   vượt `stall_speed` mới nhận.
+>
+> Phải kiểm tra frame number chứ không chỉ nhìn tốc độ: khi world dừng hẳn
+> (trường hợp `no_samples_timeout`) thì `get_velocity()` vẫn trả về giá trị cũ của
+> tick cuối, và collector sẽ tưởng xe đang chạy.
+
 Graph A* mặc định chưa được xuất vì A* là giai đoạn mở rộng sau IL và DRL.
 
 Nội dung `collector_config.json` hiện tại:
@@ -66,10 +182,11 @@ Nội dung `collector_config.json` hiện tại:
     "timeout": 30.0,
     "role_name": "hero",
     "vehicle_id": 0,
-    "wait_vehicle_timeout": 120.0
+    "wait_vehicle_timeout": 120.0,
+    "min_wheels": 4
   },
   "dataset": {
-    "output": "D:/CARLA_DATA"
+    "output": "D:/CARLA_DATA_V2"
   },
   "camera": {
     "image_mode": "seg-rgb",
@@ -85,9 +202,21 @@ Nội dung `collector_config.json` hiện tại:
   },
   "collection": {
     "max_samples": 10000,
+    "total_samples": 10000,
     "duration": 0.0,
     "queue_size": 64,
     "no_event_sensors": false
+  },
+  "rebind": {
+    "rebind_ego": true,
+    "rebind_wait_s": 300.0,
+    "max_rebinds": 0
+  },
+  "auto_restart": {
+    "auto_restart": true,
+    "max_restarts": 20,
+    "restart_wait_s": 300.0,
+    "restart_settle_s": 3.0
   },
   "astar": {
     "lookahead_m": 5.0,
@@ -99,17 +228,102 @@ Nội dung `collector_config.json` hiện tại:
     "goal_x": null,
     "goal_y": null,
     "goal_z": 0.0
+  },
+  "dedup": {
+    "dedup_stationary_speed": 0.0,
+    "dedup_action_eps": 0.02,
+    "dedup_min_interval_s": 1.0
+  },
+  "watchdog": {
+    "stall_timeout_s": 60.0,
+    "stationary_timeout_s": 60.0,
+    "camera_timeout_s": 10.0,
+    "ego_missing_timeout_s": 3.0,
+    "stall_speed": 0.3
   }
 }
 ```
 
 Những dòng thường cần chỉnh: `dataset.output` (ổ đĩa/thư mục lưu), `camera.image_mode`
 và `camera.save_seg_color` (đổi luồng ảnh lưu ra), `camera.width/height/fps`,
-`collection.max_samples`/`duration` (điều kiện dừng) và `astar.no_map_export`
-(bật khi bắt đầu giai đoạn A*). Mục `dedup` lọc bớt các mẫu trùng lặp ngay lúc thu
-(xem mục "Giảm trùng lặp / mất cân bằng dữ liệu" bên dưới).
+`collection.max_samples`/`total_samples`/`duration` (điều kiện dừng) và
+`astar.no_map_export` (bật khi bắt đầu giai đoạn A*). Mục `dedup` lọc bớt các mẫu
+trùng lặp ngay lúc thu — **mặc định vẫn tắt** (`dedup_stationary_speed: 0.0`), xem mục
+"Giảm trùng lặp / mất cân bằng dữ liệu" bên dưới. Mục `watchdog` tự dừng session
+khi hỏng:
 
-- `max_samples > 0`: tự dừng khi đã ghi đủ số mẫu đồng bộ.
+- `stall_timeout_s` (giây **thực**): không có mẫu mới nào trong ngần này giây thì
+  dừng. Lưới an toàn cuối cùng — hai watchdog dưới đây bắt sớm hơn nhiều.
+- `camera_timeout_s` (giây **thực**): camera không gửi ảnh nào trong ngần này giây
+  **trong khi world vẫn tick** thì gắn lại camera vào chính chiếc xe đó, không đổi
+  xe. Hỏng của camera không phải hỏng của xe.
+- `ego_missing_timeout_s` (giây **thực**): ego vắng mặt khỏi `WorldSnapshot` liên
+  tục ngần này giây thì coi như đã bị hủy. Đây là cách **duy nhất** thấy được việc
+  `automatic_control.py` hủy hero, vì `actor.is_alive` chỉ là cờ của client này.
+- `stationary_timeout_s` (giây **sim**): xe đứng yên liên tục ngần này giây thì dừng.
+  Bắt trường hợp agent phanh khẩn cấp vĩnh viễn. **Phải đặt lớn hơn lần chờ đèn đỏ
+  lâu nhất của bạn** — đo được trên Town01/Town02 là tối đa 31 s, nên 60 s là an toàn.
+  Nếu bạn kéo dài pha đèn thì phải tăng giá trị này theo, không thì sẽ dừng nhầm.
+- `stall_speed` (m/s): dưới ngưỡng này watchdog coi là đứng yên. Cố ý tách khỏi
+  `dedup_stationary_speed` để watchdog vẫn chạy khi dedup đã tắt.
+- Đặt `0` cho bất kỳ timeout nào để tắt riêng watchdog đó.
+- `min_wheels` (mục `connection`): số bánh tối thiểu để một chiếc xe được chọn làm
+  ego; `4` bỏ qua xe đạp/mô tô, `0` nhận tất cả. Không áp dụng khi đã ghim
+  `--vehicle-id`.
+
+Mục `rebind` quyết định chuyện gì xảy ra **ngay khi** watchdog nổ — trước khi
+nghĩ đến chuyện đóng session:
+
+- `rebind_ego` (mặc định `true`): gỡ camera khỏi chiếc xe kẹt/bị hủy, chờ một
+  chiếc xe khác rồi gắn camera vào và **ghi tiếp vào session đang chạy**. Chỉ bốn
+  lý do được đổi xe: `vehicle_stationary_timeout`, `no_samples_timeout`,
+  `ego_destroyed`, `camera_dead` — cả bốn đều là chuyện của riêng chiếc xe đó
+  (`camera_dead` chỉ đến sau khi thay camera tại chỗ hai lần vẫn không cứu được),
+  thư mục session và
+  số mẫu đã ghi vẫn còn nguyên. Đặt `false` để quay lại hành vi cũ (watchdog nổ
+  là đóng session, để `auto_restart` lo).
+- `rebind_wait_s` (giây **thực**): chờ chiếc xe khác tối đa ngần này giây rồi mới
+  đóng session với `stop_reason = rebind_timeout`. Để rộng, đủ cho bạn Ctrl+C
+  `automatic_control.py` và chạy lại nó.
+- `max_rebinds`: số lần đổi xe tối đa trong **một** session; `0` = không giới hạn.
+
+Trong lúc chờ xe mới, mọi thứ khác giữ nguyên: writer, `states.csv`, `sample_id`,
+`distance_travelled_m` (cộng dồn tiếp, không cộng thêm quãng nhảy từ chỗ xe cũ kẹt
+tới chỗ xe mới spawn). Hai thứ bị **cắt** ở ranh giới đổi xe, cố ý:
+
+- `previous_steer` / `previous_longitudinal` của mẫu đầu tiên thuộc xe mới lấy
+  theo chính mẫu đó và `sample_delta_seconds = 0`, y như mẫu đầu session — lệnh
+  cuối của chiếc xe trước không phải "một bước trước" của chiếc xe sau.
+- Quãng chờ (có thể vài phút sim) **không** tính vào `sim_time_span_s`, nên
+  `measured_fps` vẫn là nhịp thật của dữ liệu chứ không bị kéo tụt.
+
+Cột `vehicle_id` trong `states.csv` cho biết mỗi dòng thuộc chiếc xe nào, và
+`summary.json` → `ego_segments` liệt kê từng chiếc: `vehicle_id`, số mẫu đóng góp
+và `released_reason` (vì sao nó bị gỡ ra).
+
+Mục `auto_restart` quyết định chuyện gì xảy ra **sau khi** session đã đóng hẳn:
+
+- `auto_restart`: bật thì mở session mới khi session vừa rồi chết vì
+  `rebind_timeout`, `world_reloaded`, `startup_error` (chưa thấy ego / world đang
+  reload / rớt kết nối), hoặc — khi `rebind_ego = false` —
+  `vehicle_stationary_timeout`, `no_samples_timeout`, `ego_destroyed`. Các lý do
+  `duration`, `writer_error`, `user_interrupt` **không** khởi động lại — chúng
+  không phải thứ thử lại sẽ sửa được. Cần `total_samples > 0` mới bật được, vì
+  không có mục tiêu tổng thì không biết khi nào là đủ.
+- `max_restarts`: số lần khởi động lại **sau lỗi** tối đa; `0` = không giới hạn.
+  Session lăn sang session mới vì đã đầy `max_samples` không tính vào đây.
+- `restart_wait_s` (giây **thực**): chờ ego chạy lại tối đa ngần này giây rồi mới
+  bỏ cuộc. Các quãng kẹt của BehaviorAgent đo được dài 25–45 s nên để rộng.
+- `restart_settle_s`: nghỉ giữa hai session cho sensor cũ kịp gỡ xuống.
+
+Kết quả cả buổi được ghi ra `<output>/run_<YYYYmmdd_HHMMSS>.json`: tổng số mẫu,
+số session, số session bị watchdog ngã, tổng số lần đổi xe (`ego_rebinds`), và
+danh sách `stop_reason` từng session.
+
+- `max_samples > 0`: dừng **một session** khi đã ghi đủ số mẫu đồng bộ.
+- `total_samples > 0`: mục tiêu cho **cả buổi**, cộng dồn qua nhiều session. Session
+  cuối tự cắt bớt hạn mức để không vượt quá mục tiêu. `0` = chỉ chạy đúng một
+  session rồi thoát (hành vi cũ).
 - `duration > 0`: tự dừng theo số giây thực tế.
 - Nếu cả hai lớn hơn 0, điều kiện nào đạt trước sẽ dừng trước.
 - `collection.queue_size = 128`: hàng đợi packet giữa sensor callback và writer
@@ -145,6 +359,9 @@ Giữ CARLA server mở trong toàn bộ quá trình. Với mỗi map, thực hi
 2. Đợi map tải xong.
 3. Terminal A: chạy automatic_control.py, đợi hero bắt đầu chạy.
 4. Terminal B: chạy run_collector.bat.
+4b. Nếu collector báo "Cho xe moi ... de thu tiep vao session nay": xe đã kẹt.
+    Sang Terminal A, Ctrl+C rồi chạy lại automatic_control.py. KHÔNG đụng vào
+    Terminal B — collector tự tìm hero mới và ghi tiếp vào cùng session.
 5. Đủ 10.000 mẫu, collector tự cleanup sensor và dừng.
 6. Kiểm tra session bằng verify_dataset.py --strict.
 7. Sinh il_fields.csv / drl_fields.csv bằng split_csv.py  <-- BẮT BUỘC
@@ -439,8 +656,8 @@ Ba lớp lọc/cân bằng tương ứng, dùng độc lập hoặc kết hợp:
 
 ### 1) Lọc lúc thu thập (collector)
 
-`collect_data.py` / `collector_config.json` có 3 tham số (mặc định tắt qua CLI,
-đã **bật sẵn** trong `collector_config.json`):
+`collect_data.py` / `collector_config.json` có 3 tham số, **mặc định tắt ở cả CLI
+lẫn `collector_config.json`**:
 
 ```text
 --dedup-stationary-speed 0.3   # m/s; duoi nguong nay coi la dung yen. 0 = tat
@@ -455,6 +672,16 @@ bao giờ loại mẫu lúc xe đang di chuyển. Ảnh/CSV của các mẫu b�
 không được ghi ra đĩa (đỡ cả dung lượng lẫn thời gian ghi), và số mẫu bị bỏ
 được in ra log (`dup_skip=`) và lưu vào `summary.json`
 (`duplicate_frames_skipped`).
+
+> **Nên để tắt lúc thu, lọc lại ở bước hậu xử lý.** Lọc ở collector là **không đảo
+> ngược được**: ảnh PNG của mẫu bị bỏ không bao giờ được ghi ra đĩa. Đo trên dữ liệu
+> thật, xe đứng yên **28–41% thời gian session** (chờ đèn đỏ, trung vị 15–19 s/lần),
+> và dedup ở ngưỡng 0.3 m/s + 1.0 s đã **xoá 81% số mẫu xe đứng yên** — mẫu đứng yên
+> chỉ còn chiếm 8.6% dataset thay vì ~34%. Tệ hơn, các mẫu đứng yên còn sót lại có
+> `sample_delta_seconds` là 1.0–1.2 s thay vì 0.2 s, tức là `previous_steer` /
+> `previous_longitudinal` **sai thang đo** đúng ở tình huống model IL cần học nhất
+> (giữ phanh ở đèn đỏ). Cách (2) bên dưới cho cùng tác dụng lọc mà vẫn giữ được
+> dữ liệu gốc để đổi ý sau.
 
 ### 2) Lọc hậu xử lý cho dữ liệu đã thu trước đó
 
@@ -499,9 +726,12 @@ Nếu nhiều session autopilot lặp lại gần đúng một quỹ đạo, ba 
 giải quyết được (chúng không trùng nhau về mặt kỹ thuật, chỉ trùng nhau về mặt
 hành vi lái). Giảm bằng cách:
 
-- Ưu tiên nhiều session **ngắn** (đã khuyến nghị ở mục "Lặp lại qua nhiều map")
-  thay vì một session dài — mỗi lần chạy lại `automatic_control.py`, xe spawn
-  lại ở điểm ngẫu nhiên nên route cũng đổi theo.
+- Mỗi lần chạy lại `automatic_control.py`, xe spawn lại ở điểm ngẫu nhiên nên
+  route cũng đổi theo. Từ khi có `rebind_ego`, việc đó không còn bắt buộc phải
+  cắt session: một session dài đã đi qua nhiều chiếc xe (`ego_segments`) chính là
+  đi qua nhiều route khác nhau. Nếu vẫn muốn chia nhỏ để chia train/val/test theo
+  session thì dùng `max_samples` nhỏ hơn `total_samples` — `SessionRunner` tự lăn
+  sang session mới khi đầy hạn mức.
 - Đổi thời tiết (`world.set_weather(...)`) và/hoặc thời điểm trong ngày giữa
   các session, kể cả cùng map.
 - Khi build manifest, xem `dataset_summary.json` → `samples_by_map_and_split`
@@ -513,7 +743,32 @@ hành vi lái). Giảm bằng cách:
 python verify_dataset.py D:\CARLA_DATA\Town01_20260715_230000_123456 --strict
 ```
 
-Kết quả tốt phải có `rows == unique_frames` và `errors: []`. Khi bật xuất graph
+Trước hết mở `summary.json` và xem `stop_reason`. Chỉ **`max_samples`**,
+**`duration`** và **`user_interrupt`** là kết thúc bình thường; `rebind_timeout`
+(hết giờ chờ một chiếc xe khác), `world_reloaded` (map bị load lại giữa chừng),
+`writer_error`, và — khi tắt `rebind_ego` — `no_samples_timeout` (camera chết),
+`vehicle_stationary_timeout` (xe kẹt/agent phanh vĩnh viễn), `ego_destroyed`
+nghĩa là session đã hỏng giữa chừng — dữ liệu vẫn dùng được nhưng ngắn hơn dự
+kiến, và nên tìm nguyên nhân trước khi thu tiếp.
+`vehicle_stationary_s_at_stop` cho biết xe đứng yên bao lâu tại thời điểm dừng.
+
+`ego_rebinds > 0` nghĩa là session này đã đi qua nhiều chiếc xe; `ego_segments`
+cho biết từng chiếc đóng góp bao nhiêu mẫu và bị gỡ ra vì lý do gì. Đây **không**
+phải lỗi — đó chính là cơ chế giữ cho một buổi thu nằm gọn trong một session. Chỉ
+để ý khi một chiếc chỉ đóng góp vài chục mẫu rồi kẹt ngay: lúc đó vấn đề nằm ở map
+hoặc ở BehaviorAgent, không phải ở collector.
+
+Kết quả tốt phải có `rows == unique_frames`, `errors: []`, và trong `measured`:
+
+- `cadence_fps` ≈ `requested_fps` (`gap_seconds.median` ≈ 0.2 s) — đây là nhịp thật.
+- `off_grid_gap_fraction` ≈ 0 — mọi khoảng cách mẫu là bội số nguyên của 0.2 s.
+
+`throughput_fps` (= `rows / span`) **thấp hơn `requested_fps` là bình thường** khi bật
+dedup: bộ lọc xoá hẳn các mẫu xe đứng yên nên gap trở thành 1.0–1.2 s. Một session
+Town01 thật đo được `throughput_fps` 3.57 trong khi limiter vẫn cho qua đúng 5.000
+mẫu/giây — đừng dùng con số đó để kết luận nhịp bị sai. Chỉ `cadence_fps` và
+`off_grid_gap_fraction` mới phân biệt được "dedup đang làm việc" với "sensor_tick đã
+tuột". Khi bật xuất graph
 A*, kết quả cũng phải có `astar_nodes > 0` và `astar_edges > 0`.
 
 Sau khi đã thu đủ tất cả map, tạo manifest và chia theo **session**, không chia ngẫu
@@ -613,6 +868,36 @@ Lưu ý: A* chịu trách nhiệm **lập kế hoạch đường toàn cục**; 
 ## 6. Lưu ý đồng bộ
 
 Pipeline không gọi `world.tick()` vì `automatic_control.py` là client khác. Dữ liệu được ghép bằng chính `image.frame` và `WorldSnapshot.frame`, nên chỉ ghi khi đủ RGB + segmentation + state cùng frame. Điều này tránh ghép nhầm ảnh và trạng thái dù camera GPU có trễ vài frame.
+
+Vì world chạy async, `sensor_tick` không phải là thứ quyết định nhịp lấy mẫu — xem
+`carla_collector/synchronizer.py::SampleRateLimiter`. Bộ này chặn theo `sim_time_s`,
+nên `CONTROL_DT` giữ đúng 1/fps dù world tick nhanh chậm thế nào; nó cũng giữ cho
+hàng đợi writer không bị tràn (trước đây writer phải nén 3 PNG ở 22.7 Hz, gây ra
+chính những khoảng trống 1 s trong dữ liệu).
+
+Việc chặn đó nay xảy ra **ngay tại đầu vào** chứ không phải sau khi packet đã ghép
+xong, qua `synchronizer.FrameGate`: cả hai camera và world tick cùng hỏi một câu
+"frame này có định làm mẫu không" và nhận cùng một câu trả lời (cache theo `frame`,
+vì ba nguồn đó chạy trên ba thread khác nhau). Lý do là chi phí: session
+`Town03_20260824_082122_987768` ghép xong **79449** packet để giữ lại **4906** mẫu —
+94% số ảnh `bytes(image.raw_data)` (~737 KB mỗi ảnh) và 94% số state đầy đủ (~15 truy
+vấn waypoint + 4 RPC mỗi cái) được dựng lên chỉ để vứt đi, ngay trên chính thread mà
+CARLA dùng để đẩy ảnh sang client. `SampleRateLimiter.wants()` **không** dịch hạn kỳ;
+chỉ `commit()` — chạy khi một packet thực sự ghép xong — mới dịch, nên một frame được
+chọn mà cuối cùng thiếu ảnh không làm mất nhịp: các frame kế tiếp vẫn được nhận cho
+tới khi có một mẫu thật ra đời. Phải nhận rộng như vậy vì **chỉ ~50% frame có đủ cả
+hai camera** (mỗi camera bắn ~70% số frame); chặn các frame kế bên ngay ở đầu vào thì
+mỗi lần frame được chọn không ghép xong lại phải chờ nguyên một nhịp, và nhịp lấy mẫu
+tụt từ 5.0 xuống **3.9 FPS** (đo bằng mô phỏng).
+
+Cái giá của việc nhận rộng là thỉnh thoảng **hai** frame kế nhau cùng ghép xong — mẫu
+sau cách mẫu trước 10 ms, ảnh gần như y hệt, và `previous_steer` của nó là "lệnh của
+10 ms trước" chứ không phải 200 ms. Đo trên session `Town03_20260824_092246_845374`:
+67/10000 mẫu (0.67%). Vì vậy việc chặn trùng nằm ở **đầu ra**, trong
+`SampleRateLimiter.is_duplicate`: packet nào ghép xong mà cách mẫu vừa ghi dưới **nửa
+chu kỳ** thì bị bỏ, không ghi vào `states.csv`. Nhịp giữ nguyên 5.0, số mẫu bị bỏ nằm
+ở `summary.json` → `near_duplicate_packets_dropped`. Đo lại trên mô phỏng cùng tỉ lệ: 5.000 mẫu/giây sim,
+khoảng cách trung bình 0.2000 s, số ảnh phải copy giảm ~11 lần.
 
 Không bật synchronous mode riêng trong collector. Nếu sau này muốn thu hoàn toàn deterministic ở synchronous mode, phải chuyển sang một script điều phối duy nhất làm tick cho cả Traffic Manager, ego và sensor; CARLA khuyến cáo chỉ một client được quyền tick.
 

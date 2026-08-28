@@ -42,9 +42,9 @@ CSV_FIELDS = [
 
 
 # Canonical CARLA 0.9.10 raw semantic tag (0-22) -> the project's 4-class lane-keeping
-# scheme ("lane4" in behavior_cloning/carla_seg.ipynb). This project has three independent
+# scheme ("lane4" in behavior_cloning/train-seg.ipynb). This project has three independent
 # consumers of a raw semantic-segmentation frame that each need to fold it down to the same
-# classes: carla_seg.ipynb's `LABEL_LUT`, train_il.ipynb's `SEG_LABEL_LUT`, and
+# classes: train-seg.ipynb's `LABEL_LUT`, train_il.ipynb's `SEG_LABEL_LUT`, and
 # drl_training/policy/observation.py's `resize_class_map()` (used both by the DRL env and the
 # Carla Console Bridge Server's IL/DRL Autopilot mode for *live* camera frames). All of them
 # must stay byte-for-byte identical to this table: a training-time class index has to mean
@@ -95,7 +95,7 @@ del _raw_id, _train_id
 # resize drops ~31% of its pixels (measured), which means a model fed those masks at
 # inference sees a thinner lane marking than it ever saw during training.
 #
-# Everywhere a class-id map is downscaled - `carla_seg.ipynb`'s `resize_mask_raw`,
+# Everywhere a class-id map is downscaled - `train-seg.ipynb`'s `resize_mask_raw`,
 # `train_il.ipynb`'s `downscale_labels`, `drl_training/policy/observation.py`'s
 # `resize_class_map` - the fix is the same: nearest for the bulk, then restore any output
 # cell whose *area coverage* by a thin class exceeds THIN_COVER_THRESH. Keeping the id list
