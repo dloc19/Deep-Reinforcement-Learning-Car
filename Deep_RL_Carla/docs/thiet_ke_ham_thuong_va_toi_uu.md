@@ -176,7 +176,7 @@ triệu chứng → hướng xử lý sau:
 64→32) được **định nghĩa một lần**, tái sử dụng bởi cả 4 mạng (PPO actor/critic, SAC
 actor/critic). Lý do thiết kế:
 
-- **Nhất quán kiến trúc với IL** (`SteeringNet` trong `train_il.ipynb`) đến từng tên
+- **Nhất quán kiến trúc với IL** (`SteeringNet` trong `train_il_v9.ipynb`) đến từng tên
   layer (`conv`, `pool`, `cnn_fc`, `scalar_mlp`, `head.0`/`head.3`) — điều kiện bắt buộc để có
   thể copy tensor theo tên khoá state_dict từ checkpoint IL sang mạng DRL mà không cần huấn
   luyện lại từ đầu.

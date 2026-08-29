@@ -30,7 +30,7 @@ that needs `CarlaUE4.exe` running, which wasn't started here. See "What's verifi
    see the camera stream and toggle RGB/Seg/Split.
 5. To try A* Autopilot: go to **Route & Map**, wait for the graph to load, click a point on the
    road (or pick a spawn point / type x,y) → route appears with distance/ETA → **Bắt đầu lái**.
-6. To try IL/DRL Autopilot: train a checkpoint first (`Deep_RL_Carla/behavior_cloning/train_il_kaggle.ipynb`
+6. To try IL/DRL Autopilot: train a checkpoint first (`Deep_RL_Carla/behavior_cloning/train_il_v9.ipynb`
    for IL, then `Deep_RL_Carla/drl_training/train_ppo.py`/`train_sac.py` for DRL — see that
    repo's own docs), point the bridge server at it with `--il-checkpoint-path` /
    `--drl-checkpoint-path` (defaults assume the standard output paths next to
@@ -44,7 +44,7 @@ that needs `CarlaUE4.exe` running, which wasn't started here. See "What's verifi
   new `drl_training` bridge (Phase 4, `il_drl_bridge.py`) — both resolve their real classes
   from the sibling `Deep_RL_Carla` repo folder (see `bridge_server/README.md`).
 - **IL/DRL Autopilot (Phase 4)**: exercised end-to-end with a synthetic checkpoint (matching
-  `train_il_kaggle.ipynb`'s exact key names/shapes) and fake CARLA state objects, offline —
+  `train_il_v9.ipynb`'s exact key names/shapes) and fake CARLA state objects, offline —
   `build_il_predictor()`/`build_drl_predictor()` load the checkpoint, remap IL weights onto
   `GaussianActor` (`policy/il_compat.py`), and `LearnedAutopilotMode.tick()` runs the full
   observation → forward pass → `VehicleControl` path and returns a valid, in-range action.

@@ -383,7 +383,7 @@ python verify_dataset.py D:\CARLA_DATA\Town01_<timestamp> --strict
 python ..\data_analysis\split_csv.py D:\CARLA_DATA\Town01_<timestamp>
 ```
 
-`collect_data.py` **chỉ** ghi `states.csv`; `train_il.ipynb` đọc `il_fields.csv` trong
+`collect_data.py` **chỉ** ghi `states.csv`; `train_il_v9.ipynb` đọc `il_fields.csv` trong
 từng thư mục Town, và file đó do `split_csv.py` sinh ra. Bỏ qua bước này thì notebook IL
 sẽ dừng ngay ở mục 3 với `FileNotFoundError: il_fields.csv`. Notebook segmentation không
 cần file này (nó đọc thẳng `rgb/` + `seg_label/`).
@@ -692,7 +692,7 @@ dùng để train:
 
 - **`data_analysis/split_csv.py`** — đây là script thực sự sinh
   `il_fields.csv`/`drl_fields.csv`/`astar_fields.csv` mà
-  `behavior_cloning/train_il.ipynb` đọc trực tiếp theo từng Town. Muốn
+  `behavior_cloning/train_il_v9.ipynb` đọc trực tiếp theo từng Town. Muốn
   lọc trùng lặp cho dữ liệu **đã thu trước khi collector có filter này**, chạy
   lại lệnh này cho từng session trước khi mở notebook:
 
@@ -714,7 +714,7 @@ ra tương ứng.
 
 ### 3) Cân bằng lúc train (không xoá dữ liệu)
 
-`behavior_cloning/train_il.ipynb` dùng `WeightedRandomSampler` để mỗi
+`behavior_cloning/train_il_v9.ipynb` dùng `WeightedRandomSampler` để mỗi
 epoch lấy mẫu đều hơn theo `traffic_light_state` (đã có sẵn) **và** theo mức độ
 `|steer|` (đi thẳng / lái nhẹ / cua vừa / cua gấp). Đây là lựa chọn an toàn nhất
 vì không mất bất kỳ mẫu recovery/cua gấp hiếm gặp nào — chỉ đổi tần suất được

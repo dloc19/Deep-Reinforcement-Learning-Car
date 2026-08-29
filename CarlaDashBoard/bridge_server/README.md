@@ -63,7 +63,7 @@ Then type e.g. `{"type":"StartSession"}` and press Enter — you should immediat
 
 - `bridge/il_drl_bridge.py` is the sibling-repo bridge to `Deep_RL_Carla/drl_training` (same
   shape as `route_planning.py` for `router_plan`) plus the two live-inference factories:
-  `build_il_predictor()` (an IL checkpoint from `behavior_cloning/train_il_kaggle.ipynb`) and
+  `build_il_predictor()` (an IL checkpoint from `behavior_cloning/train_il_v9.ipynb`) and
   `build_drl_predictor()` (a PPO/SAC checkpoint from `drl_training/train_ppo.py` /
   `train_sac.py`, loaded the same way `drl_training/evaluate.py` does — including reading the
   observation contract off the **IL** checkpoint, since that's the only place
@@ -85,7 +85,7 @@ Then type e.g. `{"type":"StartSession"}` and press Enter — you should immediat
 
 ## What's intentionally NOT here yet
 
-- IL/DRL training itself (that's `behavior_cloning/train_il_kaggle.ipynb` and
+- IL/DRL training itself (that's `behavior_cloning/train_il_v9.ipynb` and
   `drl_training/train_ppo.py`/`train_sac.py`, both in the sibling `Deep_RL_Carla` repo) — this
   package only runs an already-trained checkpoint live.
 - This is **not** a drop-in replacement for `data_collection/collect_data.py` — see the

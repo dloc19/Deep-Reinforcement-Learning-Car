@@ -69,7 +69,7 @@ def parse_args():
                         help="Tan so thu mau. 5 FPS = CONTROL_DT 0.2s - day la HOP "
                              "DONG voi IL/DRL: previous_steer nghia la 'lenh cua 1 "
                              "buoc truoc', doi FPS la doi y nghia dac trung do "
-                             "(xem train_il.ipynb muc 2)")
+                             "(xem train_il_v9.ipynb muc 2)")
     camera.add_argument(
         "--image-mode", choices=("seg-only", "seg-rgb"), default="seg-only",
         help="seg-only tiet kiem tai nguyen; seg-rgb luu them RGB")

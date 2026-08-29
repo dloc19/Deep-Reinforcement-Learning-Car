@@ -68,7 +68,7 @@ lập, làm sau khi cần đến navigation thật sự thay vì chỉ demo/vali
    `docs/manual_dieu_huong_astar.md` cho hướng dẫn dùng đầy đủ.
 4. **Mở rộng observation contract** (bước bắt buộc, không thể bỏ qua nếu muốn policy thực sự
    rẽ đúng theo route thay vì chỉ đi thẳng ở ngã ba/ngã tư):
-   - `behavior_cloning/train_il.ipynb`: thêm `route_target_local_x`, `route_target_local_y`
+   - `behavior_cloning/train_il_v9.ipynb`: thêm `route_target_local_x`, `route_target_local_y`
      (2 số liên tục, z-score) + `route_command` one-hot (6 lớp) vào scalar vector — cùng chỗ
      đang định nghĩa `CONTINUOUS_COLS`/`TRAFFIC_LIGHT_VOCAB`. Cần **dataset mới** có sẵn các
      cột này không rỗng — tức là thu thập lại với `--map-export` bật + gắn

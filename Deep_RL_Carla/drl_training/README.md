@@ -45,7 +45,7 @@ hay train lại segmentation/IL. Nhưng ở đây có **hai** con số, không p
 | `obs_width` / `obs_height` | **240 × 192** | độ phân giải OBSERVATION đưa vào mạng, sau khi `resize_class_map()` hạ mẫu |
 
 **Vì sao observation phải là 240×192.** Đó chính xác là `IMAGE_WIDTH`/`IMAGE_HEIGHT` mà
-`SteeringNet` đã được train trong `train_il.ipynb`. `PolicyBackbone` dùng
+`SteeringNet` đã được train trong `train_il_v9.ipynb`. `PolicyBackbone` dùng
 `AdaptiveAvgPool2d((1,1))` nên **mọi** kích thước đều chạy được và **không có lỗi nào báo** —
 đó chính là cái bẫy: actor warm-start ở 480×384 vẫn chạy ngon lành nhưng nhìn thấy cấu trúc
 lớn gấp 2× so với lúc học, khiến phần warm-start mất giá trị trong im lặng.
@@ -122,7 +122,7 @@ thu hẹp về phạm vi bám làn — giống hệt nhau cho cả PPO và SAC v
   scalar = `[speed_mps, yaw_rate_rps, speed_limit_kmh]` (z-score theo `norm_stats` của
   checkpoint IL) + `[previous_steer, previous_longitudinal]` (raw, đã ∈[-1,1]) +
   one-hot `traffic_light_state` (4 lớp). **Không** có `lane_offset_m`/`heading_error_rad`
-  (chỉ dùng cho reward) — xem lý do trong `../behavior_cloning/train_il.ipynb`.
+  (chỉ dùng cho reward) — xem lý do trong `../behavior_cloning/train_il_v9.ipynb`.
 - **Action**: `[steer, longitudinal] ∈ [-1,1]`, `longitudinal≥0`→throttle, `<0`→brake
   (giống hệt cách `../data_collection/carla_collector/writer.py` mã hoá `longitudinal`). SAC
   đạt khoảng này bằng tanh-squash trong `GaussianPolicy.sample`; PPO sample rồi clip (xem

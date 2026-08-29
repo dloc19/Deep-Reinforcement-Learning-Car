@@ -65,7 +65,7 @@ def resolve_device(device_name: str):
 
 
 def build_il_predictor(ns, checkpoint_path, device_name="cpu"):
-    """Loads an IL checkpoint (`behavior_cloning/train_il.ipynb` output) and returns
+    """Loads an IL checkpoint (`behavior_cloning/train_il_v9.ipynb` output) and returns
     `(contract, predict)`. `predict(seg, scalar) -> np.ndarray[2]` (steer, throttle/brake in
     [-1, 1]) is deterministic — IL has no notion of an exploration distribution, it's a
     straight regression to the demonstrated action, so there's no `deterministic` flag to

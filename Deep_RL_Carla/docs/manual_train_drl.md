@@ -114,7 +114,7 @@ python -c "import carla, torch; print('CARLA OK | torch', torch.__version__, '| 
 
 ### Checkpoint IL bắt buộc phải có trước
 
-Tải `best_il_model.pth` từ Kaggle (output của `../behavior_cloning/train_il.ipynb`)
+Tải `best_il_model.pth` từ Kaggle (output của `../behavior_cloning/train_il_v9.ipynb`)
 về `../behavior_cloning/best_il_model.pth` trên máy local — đây là đường dẫn mặc định
 `il_checkpoint` trong cả `ppo_config.json` lẫn `sac_config.json`. Không có file này thì
 `train_ppo.py`/`train_sac.py` không khởi động được (ngay cả khi `--no-warm-start`, checkpoint
@@ -626,7 +626,7 @@ hay train lại segmentation/IL. Ở đây có **hai** con số:
 | `obs_width` / `obs_height` | **240 × 192** | đưa vào mạng, sau khi `resize_class_map()` hạ mẫu |
 
 **Observation phải là 240×192** vì đó đúng là `IMAGE_WIDTH`/`IMAGE_HEIGHT` mà `SteeringNet`
-đã học trong `train_il.ipynb`. `PolicyBackbone` dùng `AdaptiveAvgPool2d((1,1))` nên mọi kích
+đã học trong `train_il_v9.ipynb`. `PolicyBackbone` dùng `AdaptiveAvgPool2d((1,1))` nên mọi kích
 thước đều chạy và **không lỗi gì** — đó là cái bẫy: actor warm-start ở 480×384 vẫn chạy nhưng
 nhìn cấu trúc lớn gấp 2× so với lúc học, làm hỏng warm-start trong im lặng.
 
