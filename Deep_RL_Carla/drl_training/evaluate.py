@@ -81,7 +81,15 @@ def main():
             obs, _info = env.reset()
             done = False
             ep_reward, ep_len, collided, off_lane_steps = 0.0, 0, False, 0
-            lane_offsets = []
+            junction_steps = 0
+            # Hai danh sach, khong phai mot. Trong nga tu, `lane_offset_m` duoc suy ra tu
+            # "lan duong gan nhat", ma cac nhanh cat nhau nen tham chieu do nhay sang nhanh
+            # vuong goc chi sau vai met — con so vo nghia (do duoc: heading_error nhay 175
+            # do trong MOT buoc 0.2s). Gop no vao trung binh lam nang luc bam lan trong te
+            # hon THUC TE. `demo_il.py` da tach nhu vay; o day phai tach GIONG HET, neu
+            # khong thi bieu do 09 dem baseline IL (duong thuong) so voi DRL (lan nga tu) —
+            # hai thang do khac nhau, ket luan se sai.
+            lane_offsets, lane_offsets_road = [], []
             info = {}
             while not done:
                 action = agent.select_action(obs["seg"], obs["scalar"], deterministic=deterministic)
@@ -91,6 +99,10 @@ def main():
                 ep_len += 1
                 state = info.get("state", {})
                 lane_offsets.append(abs(state.get("lane_offset_m", 0.0)))
+                if state.get("is_junction"):
+                    junction_steps += 1
+                else:
+                    lane_offsets_road.append(abs(state.get("lane_offset_m", 0.0)))
                 if state.get("off_lane"):
                     off_lane_steps += 1
                 if info.get("terminate_reason") == "collision":
@@ -98,13 +110,20 @@ def main():
 
             reason = info.get("terminate_reason", "time_limit")
             mean_offset = float(np.mean(lane_offsets)) if lane_offsets else 0.0
+            mean_offset_road = (float(np.mean(lane_offsets_road)) if lane_offsets_road
+                                else float("nan"))
             results.append({
                 "algorithm": algorithm, "episode": episode, "reward": ep_reward, "length": ep_len,
                 "collided": collided, "off_lane_steps": off_lane_steps,
-                "mean_abs_lane_offset": mean_offset, "terminate_reason": reason,
+                "junction_steps": junction_steps,
+                "mean_abs_lane_offset": mean_offset,
+                "mean_abs_lane_offset_road": mean_offset_road,
+                "terminate_reason": reason,
             })
-            print("episode=%d reward=%.2f len=%d collided=%s mean|lane_offset|=%.3fm reason=%s" % (
-                episode, ep_reward, ep_len, collided, mean_offset, reason))
+            print("episode=%d reward=%.2f len=%d collided=%s mean|lane_offset|=%.3fm "
+                  "(duong thuong %.3fm, nga tu %.0f%%) reason=%s" % (
+                      episode, ep_reward, ep_len, collided, mean_offset, mean_offset_road,
+                      100.0 * junction_steps / max(ep_len, 1), reason))
     finally:
         env.close()
 
@@ -122,7 +141,8 @@ def main():
         checkpoint_path = str(Path(config["_resume"]).expanduser().resolve())
         eval_run_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         fieldnames = ["algorithm", "episode", "reward", "length", "collided",
-                      "off_lane_steps", "mean_abs_lane_offset", "terminate_reason",
+                      "off_lane_steps", "junction_steps", "mean_abs_lane_offset",
+                      "mean_abs_lane_offset_road", "terminate_reason",
                       "checkpoint", "eval_run_utc"]
         logger = CsvLogger(csv_path, fieldnames, mode="w")
         for row in results:
@@ -133,10 +153,15 @@ def main():
     rewards = [r["reward"] for r in results]
     collision_rate = 100.0 * sum(1 for r in results if r["collided"]) / len(results)
     mean_offset = float(np.mean([r["mean_abs_lane_offset"] for r in results]))
+    mean_offset_road = float(np.nanmean([r["mean_abs_lane_offset_road"] for r in results]))
+    junction_rate = (100.0 * sum(r["junction_steps"] for r in results)
+                     / max(sum(r["length"] for r in results), 1))
     print("\n=== Tong ket %d episode (%s) ===" % (len(results), algorithm.upper()))
     print("Reward trung binh: %.2f +/- %.2f" % (float(np.mean(rewards)), float(np.std(rewards))))
     print("Ty le va cham: %.1f%%" % collision_rate)
-    print("Lech lan trung binh (|m|): %.3f" % mean_offset)
+    print("Lech lan trung binh (|m|): %.3f  (chi duong thuong: %.3f)" % (
+        mean_offset, mean_offset_road))
+    print("Thoi gian trong nga tu: %.1f%%  (o do lane_offset la phep do rac)" % junction_rate)
 
 
 if __name__ == "__main__":
