@@ -87,6 +87,14 @@ def main():
     obs_h = config.get("obs_height", config["height"])
     obs_w = config.get("obs_width", config["width"])
     buffer = ReplayBuffer(config["buffer_capacity"], (obs_h, obs_w), contract.scalar_feature_dim, 2, device)
+    if global_step > 0:
+        # Resume: buffer KHONG nam trong checkpoint (no la 1.4-2.3 GB, xem README). Nen sau
+        # moi lan resume, SAC phai nap lai `learning_starts` transition truoc khi hoc tiep —
+        # mat khoang learning_starts/14.6 giay. Do la cai gia phai tra cho viec khong luu
+        # buffer, va no re hon nhieu so voi mot critic bi pha hong.
+        print("Resume: replay buffer bat dau RONG — se nap lai %d transition (~%.1f phut) "
+              "truoc khi hoc tiep." % (config["learning_starts"],
+                                       config["learning_starts"] / 14.6 / 60.0))
     print("Replay buffer: %d transitions x %dx%d px ~= %.2f GB (seg only, xem sac/replay_buffer.py)" % (
         config["buffer_capacity"], obs_h, obs_w,
         config["buffer_capacity"] * obs_h * obs_w / (1024.0 ** 3)))
@@ -117,7 +125,7 @@ def main():
 
     try:
         while global_step < config["total_steps"]:
-            if global_step < config["learning_starts"] and use_random_warmup:
+            if len(buffer) < config["learning_starts"] and use_random_warmup:
                 action = np.random.uniform(-1.0, 1.0, size=2).astype(np.float32)
             else:
                 action = agent.select_action(obs["seg"], obs["scalar"], deterministic=False)
@@ -147,8 +155,13 @@ def main():
                 episode_reward, episode_len = 0.0, 0
                 obs, _info = env.reset()
 
-            if global_step >= config["learning_starts"] and global_step % config["train_freq"] == 0 \
-                    and len(buffer) >= config["batch_size"]:
+            # Dieu kien tinh theo SO TRANSITION DANG CO, khong theo global_step. Hai cai
+            # nay bang nhau o mot lan chay lien tuc, nhung KHAC HAN khi resume: checkpoint
+            # khong mang theo replay buffer, nen `global_step` phuc hoi ve 40 000 trong khi
+            # buffer rong tinh. Tinh theo global_step thi SAC bat dau update ngay khi buffer
+            # co 128 mau va — voi gradient_steps=1 moi env step — chay hang tram lan gradient
+            # tren gan nhu cung mot nhum du lieu, du de pha hong critic vua resume ve.
+            if len(buffer) >= config["learning_starts"] and global_step % config["train_freq"] == 0:
                 for _ in range(config["gradient_steps"]):
                     batch = buffer.sample(config["batch_size"])
                     stats = agent.update(batch)
