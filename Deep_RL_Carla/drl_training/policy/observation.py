@@ -114,7 +114,7 @@ class ObservationContract(object):
             raise ValueError(
                 "Checkpoint IL dung %d lop segmentation, nhung pipeline hien tai dung %d "
                 "lop (%s). Day KHONG phai loi shape - no se chay im lang va lai sai. Train "
-                "lai theo thu tu: train-seg.ipynb -> train_il.ipynb -> DRL, hoac quay ve "
+                "lai theo thu tu: train-seg.ipynb -> train_il_v9.ipynb -> DRL, hoac quay ve "
                 "dung checkpoint IL cung phien ban bang nhan." %
                 (self.num_classes, NUM_SEG_CLASSES, SEG_CLASS_NAMES))
 
@@ -125,7 +125,7 @@ class ObservationContract(object):
                   "    Day la he qua cua chinh hanh dong can du doan, nen model se hoc doc\n"
                   "    lai dap an thay vi nhin anh segmentation. MAE offline se rat dep va\n"
                   "    xe se KHONG lai duoc trong vong kin. Train lai voi\n"
-                  "    behavior_cloning/train_il_v5.ipynb (da bo cac cot nay)." % (leaks,))
+                  "    behavior_cloning/train_il_v9.ipynb (da bo cac cot nay)." % (leaks,))
 
     def normalize_traffic_light(self, value):
         v = str(value).strip().lower()
@@ -149,7 +149,7 @@ class ObservationContract(object):
 def resize_class_map(class_map, height, width):
     """Remaps a raw CARLA semantic-segmentation frame (raw tags 0-22) onto the project's
     4-class lane-keeping scheme (`RAW_TO_TRAIN_LANE_LUT` — Background/Road/RoadLine/Sidewalk,
-    the same table as `train-seg.ipynb`'s `LABEL_LUT` / `train_il.ipynb`'s `SEG_LABEL_LUT`),
+    the same table as `train-seg.ipynb`'s `LABEL_LUT` / `train_il_v9.ipynb`'s `SEG_LABEL_LUT`),
     then nearest-neighbour resizes it.
 
     This is the single choke point every *live* caller — this env's `_make_observation` and
@@ -169,7 +169,7 @@ def resize_class_map(class_map, height, width):
     Measured on a perspective lane mask, 384x480 -> 192x240 with plain nearest keeps only
     69% of the RoadLine pixels that the coverage-preserving pass keeps (and 71% in the far
     half of the road, where the marking decides how early the car starts a turn). That is a
-    silent train/inference mismatch: `train_il.ipynb` downscales its training masks with
+    silent train/inference mismatch: `train_il_v9.ipynb` downscales its training masks with
     `downscale_labels`, which restores any output cell whose *area coverage* by a thin class
     exceeds `THIN_COVER_THRESH`. This function has to do the identical thing, or a
     warm-started policy sees a systematically thinner lane marking online than it was
@@ -236,7 +236,7 @@ def build_vehicle_state(vehicle, world_map, seg, previous_steer, previous_longit
 
     waypoint = world_map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving)
     if waypoint is None:
-        lane_offset, heading_error, off_lane = 0.0, 0.0, 1
+        lane_offset, heading_error, off_lane, is_junction = 0.0, 0.0, 1, 0
     else:
         wp_tf = waypoint.transform
         dx = location.x - wp_tf.location.x
@@ -247,6 +247,16 @@ def build_vehicle_state(vehicle, world_map, seg, previous_steer, previous_longit
         off_lane = int(abs(lane_offset) > half_width)
         heading_error_deg = normalize_angle(transform.rotation.yaw - wp_tf.rotation.yaw)
         heading_error = np.radians(heading_error_deg)
+        # TRONG NGA TU, ba dai luong tren KHONG con y nghia. `get_waypoint(project_to_road)`
+        # bam vao lan gan nhat, ma trong nga tu cac nhanh cat nhau nen "lan gan nhat" doi
+        # sang nhanh vuong goc/nguoc chieu chi sau vai met. Do tren runs/il_demo_v9:
+        # heading_error nhay 175 do trong MOT buoc 0.2s o 7.4 m/s = yaw rate 874 do/s, tuc
+        # bat kha thi voi xe that — do la tham chieu nhay, khong phai xe quay.
+        # Ai dung `lane_offset_m`/`heading_error_rad`/`off_lane` de tinh reward hay de danh
+        # gia PHAI kiem co nay truoc (xem envs/carla_lane_keep_env.py::_compute_reward).
+        # Ten cot giong `is_junction` cua collector (data_collection/.../schema.py) va cua
+        # AUX_COLS trong notebook IL — co y de ba noi goi cung mot thu bang cung mot ten.
+        is_junction = int(waypoint.is_junction)
 
     return {
         "seg": seg,
@@ -260,4 +270,5 @@ def build_vehicle_state(vehicle, world_map, seg, previous_steer, previous_longit
         "lane_offset_m": float(lane_offset),
         "heading_error_rad": float(heading_error),
         "off_lane": off_lane,
+        "is_junction": is_junction,
     }

@@ -18,6 +18,10 @@ Cach dung:
     python demo_il.py --config ppo_config.json --episodes 3 --preview
     python demo_il.py --config ppo_config.json --episodes 5 --town Town05 \\
         --log-steps runs/il_demo/steps.csv
+
+Luu y ve ban do: Town03 co 44% waypoint nam trong nga tu, noi `lane_offset_m` /
+`heading_error_rad` la phep do rac (xem policy/observation.py). Tong ket ben duoi vi vay
+in RIENG con so tren duong thuong, va cham diem PASS bang chinh con so do.
 """
 
 import sys
@@ -57,8 +61,8 @@ PREVIEW_COLORS = np.array([[60, 60, 60], [128, 64, 128], [50, 234, 157], [232, 3
 def split_argv(argv):
     """Tach co rieng cua script nay ra khoi argv truoc khi dua phan con lai cho
     `config.load_config()` — parser cua no dung `parse_args()` nen bao loi voi co la."""
-    own = {"preview": False, "town": None, "log_steps": None}
-    with_value = {"--town": "town", "--log-steps": "log_steps"}
+    own = {"preview": False, "log_steps": None}
+    with_value = {"--log-steps": "log_steps"}
     rest = []
     index = 0
     while index < len(argv):
@@ -69,7 +73,8 @@ def split_argv(argv):
             own[with_value[arg]] = argv[index + 1]
             index += 1
         else:
-            rest.append(arg)   # --config / --il-checkpoint / --episodes / ... -> load_config
+            # --config / --il-checkpoint / --episodes / --town / ... -> load_config
+            rest.append(arg)
         index += 1
     return own, rest
 
@@ -142,14 +147,8 @@ def main():
     load_il_actor_weights(actor, il_checkpoint)
     actor.to(device).eval()
 
-    if own["town"]:
-        import carla
-        client = carla.Client(config["host"], config.get("port", 2000))
-        client.set_timeout(config.get("timeout", 20.0))
-        if not client.get_world().get_map().name.endswith(own["town"]):
-            print("Dang nap %s ..." % own["town"])
-            client.load_world(own["town"])
-
+    # `--town` do CarlaLaneKeepEnv xu ly (xem `_load_town`), dung chung voi train_ppo.py /
+    # train_sac.py / evaluate.py thay vi moi script mot ban.
     env = CarlaLaneKeepEnv(config, contract)
     episodes = config["_episodes"] or 3
     step_logger = None
@@ -157,7 +156,7 @@ def main():
         step_logger = CsvLogger(
             Path(own["log_steps"]).expanduser().resolve(),
             ["episode", "step", "steer", "longitudinal", "speed_mps", "lane_offset_m",
-             "heading_error_rad", "off_lane", "reward"], mode="w")
+             "heading_error_rad", "off_lane", "is_junction", "reward"], mode="w")
 
     results = []
     aborted = False
@@ -166,8 +165,13 @@ def main():
             obs, info = env.reset()
             done = False
             record = {"episode": episode, "reward": 0.0, "steps": 0, "collided": False,
-                      "off_lane_steps": 0, "terminate_reason": "time_limit"}
-            offsets, speeds, steers, longs = [], [], [], []
+                      "off_lane_steps": 0, "junction_steps": 0,
+                      "terminate_reason": "time_limit"}
+            # `offsets_road` bo qua buoc trong nga tu: o do lane_offset_m la phep do rac nen
+            # gop vao trung binh chi lam ban ket luan sai ve nang luc bam lan. Do tren
+            # il_demo_v9: |lech| TB 0.579m tren TAT CA buoc, nhung 0.225m neu chi tinh duong
+            # thuong — hai con so ke hai cau chuyen khac han.
+            offsets, offsets_road, speeds, steers, longs = [], [], [], [], []
             while not done:
                 seg_t = torch.as_tensor(obs["seg"], device=device).unsqueeze(0)
                 scalar_t = torch.as_tensor(obs["scalar"], device=device).unsqueeze(0)
@@ -186,6 +190,10 @@ def main():
                 record["reward"] += reward
                 record["steps"] += 1
                 offsets.append(abs(state.get("lane_offset_m", 0.0)))
+                if state.get("is_junction"):
+                    record["junction_steps"] += 1
+                else:
+                    offsets_road.append(abs(state.get("lane_offset_m", 0.0)))
                 speeds.append(state.get("speed_mps", 0.0))
                 steers.append(steer)
                 longs.append(longitudinal)
@@ -197,7 +205,8 @@ def main():
                         "longitudinal": longitudinal, "speed_mps": state.get("speed_mps", 0.0),
                         "lane_offset_m": state.get("lane_offset_m", 0.0),
                         "heading_error_rad": state.get("heading_error_rad", 0.0),
-                        "off_lane": int(bool(state.get("off_lane"))), "reward": reward})
+                        "off_lane": int(bool(state.get("off_lane"))),
+                        "is_junction": int(bool(state.get("is_junction"))), "reward": reward})
                 if own["preview"] and draw_preview(obs["seg"], steer, longitudinal, state) == 27:
                     aborted = True
                     done = True
@@ -205,6 +214,8 @@ def main():
             record["terminate_reason"] = info.get("terminate_reason", "time_limit")
             record["collided"] = record["terminate_reason"] == "collision"
             record["mean_abs_offset"] = float(np.mean(offsets)) if offsets else float("nan")
+            record["mean_abs_offset_road"] = (float(np.mean(offsets_road)) if offsets_road
+                                              else float("nan"))
             record["p95_abs_offset"] = float(np.percentile(offsets, 95)) if offsets else float("nan")
             record["mean_speed"] = float(np.mean(speeds)) if speeds else 0.0
             record["distance_m"] = (record["mean_speed"] * record["steps"]
@@ -213,10 +224,13 @@ def main():
             record["long_mean"] = float(np.mean(longs)) if longs else 0.0
             record["brake_rate"] = float(np.mean([1.0 if value < 0 else 0.0 for value in longs])) if longs else 0.0
             results.append(record)
-            print("ep=%d reward=%8.1f steps=%4d %6.0fm v=%.1fm/s |offset|=%.3f(p95 %.3f) "
-                  "off_lane=%4.1f%% steer_std=%.4f long=%+.2f(phanh %2.0f%%) -> %s" % (
+            print("ep=%d reward=%8.1f steps=%4d %6.0fm v=%.1fm/s |offset|=%.3f(duong "
+                  "thuong %.3f) nga_tu=%3.0f%% off_lane=%4.1f%% steer_std=%.4f "
+                  "long=%+.2f(phanh %2.0f%%) -> %s" % (
                       episode, record["reward"], record["steps"], record["distance_m"],
-                      record["mean_speed"], record["mean_abs_offset"], record["p95_abs_offset"],
+                      record["mean_speed"], record["mean_abs_offset"],
+                      record["mean_abs_offset_road"],
+                      100.0 * record["junction_steps"] / max(record["steps"], 1),
                       100.0 * record["off_lane_steps"] / max(record["steps"], 1),
                       record["steer_std"], record["long_mean"], 100 * record["brake_rate"],
                       record["terminate_reason"]))
@@ -237,6 +251,9 @@ def main():
         return
 
     mean_offset = mean_of(results, "mean_abs_offset")
+    # Cham bang so do tren DUONG THUONG. Trong nga tu, lane_offset_m khong phai "bam lan
+    # kem" ma la mot phep do khong con y nghia — cham no la cham nham (xem observation.py).
+    mean_offset_road = mean_of(results, "mean_abs_offset_road")
     mean_speed = mean_of(results, "mean_speed")
     steer_std = mean_of(results, "steer_std")
     total_steps = sum(row["steps"] for row in results)
@@ -248,7 +265,11 @@ def main():
     print("Quang duong TB      : %.0f m (%.0f buoc/episode)" % (
         mean_of(results, "distance_m"), total_steps / float(len(results))))
     print("Toc do TB           : %.2f m/s (%.1f km/h)" % (mean_speed, mean_speed * 3.6))
-    print("|lech lan| TB       : %.3f m" % mean_offset)
+    total_junction = sum(row["junction_steps"] for row in results)
+    print("|lech lan| TB       : %.3f m  (chi duong thuong: %.3f m)" % (
+        mean_offset, mean_offset_road))
+    print("Thoi gian trong nga tu: %.1f%%  (o day lane_offset/heading la phep do rac)" % (
+        100.0 * total_junction / float(max(total_steps, 1))))
     print("Ty le ra khoi lan   : %.1f%%" % (100.0 * off_lane_rate))
     print("Va cham             : %d/%d episode" % (collisions, len(results)))
     print("Do lech chuan steer : %.4f" % steer_std)
@@ -270,8 +291,9 @@ def main():
         problems.append(
             "XE GAN NHU KHONG CHAY (%.2f m/s). Xem cot longitudinal trong --log-steps: neu "
             "no bi keo ve am roi o lai do thi %s" % (mean_speed, cause))
-    if mean_offset > PASS_MEAN_OFFSET_M:
-        problems.append("Bam lan kem (|lech| TB %.3f m > %.2f m)." % (mean_offset, PASS_MEAN_OFFSET_M))
+    if mean_offset_road > PASS_MEAN_OFFSET_M:
+        problems.append("Bam lan kem tren duong thuong (|lech| TB %.3f m > %.2f m)."
+                        % (mean_offset_road, PASS_MEAN_OFFSET_M))
     if off_lane_rate > PASS_OFF_LANE_RATE:
         problems.append("Ra khoi lan %.1f%% thoi gian (nguong %.0f%%)." % (
             100 * off_lane_rate, 100 * PASS_OFF_LANE_RATE))
@@ -294,7 +316,8 @@ def main():
 
     out_path = Path(config["output"]).expanduser().resolve() / "il_demo_results.csv"
     fields = ["episode", "reward", "steps", "distance_m", "mean_speed", "mean_abs_offset",
-              "p95_abs_offset", "off_lane_steps", "steer_std", "long_mean", "brake_rate",
+              "mean_abs_offset_road", "p95_abs_offset", "off_lane_steps", "junction_steps",
+              "steer_std", "long_mean", "brake_rate",
               "collided", "terminate_reason", "checkpoint", "run_utc"]
     logger = CsvLogger(out_path, fields, mode="w")
     run_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

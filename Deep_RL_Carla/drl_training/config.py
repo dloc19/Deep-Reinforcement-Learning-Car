@@ -22,7 +22,7 @@ COMMON_DEFAULTS = {
     # width/height  = do phan giai CAMERA segmentation (khop collector: 480x384).
     # obs_width/obs_height = do phan giai OBSERVATION dua vao mang, sau khi
     #   resize_class_map() ha mau. Phai khop IMAGE_WIDTH/IMAGE_HEIGHT cua
-    #   train_il.ipynb (240x192) thi actor warm-start moi nhin thay dung thang do
+    #   train_il_v9.ipynb (240x192) thi actor warm-start moi nhin thay dung thang do
     #   dac trung nhu luc train IL. Ha o day cung giam 4x bo nho rollout/replay
     #   (SAC 50k transition: 9.2GB o 480x384 -> 2.2GB o 240x192).
     "width": 480, "height": 384, "obs_width": 240, "obs_height": 192,
@@ -39,10 +39,31 @@ COMMON_DEFAULTS = {
     # 10 quyet dinh = 2s lien tuc ngoai lan thi ket thuc episode (truoc day 20 tick = 1s).
     "off_lane_patience_steps": 10,
     "warmup_ticks": 4, "frame_timeout": 5.0, "no_rendering": False, "seed": 42,
+    # Ban do nap truoc khi train/eval. None = dung the gioi dang chay tren server.
+    # Do tren ca 5 town (ti le waypoint nam trong nga tu — noi `lane_offset_m` va
+    # `heading_error_rad` la phep do RAC, xem envs/carla_lane_keep_env.py):
+    #     Town01 23.3% | Town04 25.4% | Town05 27.7% | Town02 28.1% | Town03 44.2%
+    # Town03 bo di gan mot nua so mau cho bai toan bam lan — dung Town01 (don gian) hoac
+    # Town04 (33.8 km lan, nhieu duong dai) de train, de danh Town05 cho danh gia vi do la
+    # town ma IL chua tung thay.
+    "town": None,
+    # Keo camera cua so CARLA bam theo xe ego moi quyet dinh. Chi de NGUOI xem — khong doi
+    # observation, khong doi reward, khong doi ket qua train. Tat mac dinh vi trong mot lan
+    # train dai thi khong ai ngoi nhin, va no ton mot lenh RPC set_transform moi step.
+    "spectator_follow": False,
+    # Ghim vong lap ve THOI GIAN THUC. Mac dinh False: o sync mode, CARLA chay nhanh het
+    # muc client keo duoc — do duoc 58 tick/s x 0.05s = nhanh gap 2.9 lan thuc te, nen
+    # chuyen dong nhin bi "tua nhanh". Bat co nay chi khi NGUOI dang xem; no lam cham
+    # training xuong dung toc do that.
+    "realtime": False,
     # reward weights (docs/csv_fields_by_task.md — "DRL" section)
     "w_speed": 1.0, "w_lane_offset": 1.0, "w_heading": 0.5,
     "w_steer_delta": 1.0, "w_long_delta": 0.5, "w_yaw_rate": 0.1,
     "off_lane_penalty": 5.0, "collision_penalty": 50.0, "lane_invasion_penalty": 1.0,
+    # Trong nga tu, `lane_offset_m`/`heading_error_rad`/`off_lane` la phep do RAC (waypoint
+    # tham chieu nhay sang nhanh khac). Mac dinh tat cac so hang do o day; dat False neu
+    # muon chay doi chung voi hanh vi cu. Xem envs/carla_lane_keep_env.py::_compute_reward.
+    "junction_mask_lane_terms": True,
     # shared training settings
     "il_checkpoint": "../behavior_cloning/best_il_model.pth",
     "warm_start": True, "device": "cuda", "gamma": 0.99,
@@ -52,7 +73,7 @@ ALGO_DEFAULTS = {
     "ppo": {
         "output": "./runs/ppo_lane_keep",
         # LR TACH RIENG actor/critic + `critic_warmup_updates`: xem docstring
-        # ppo/ppo_agent.py.__init__ va §12 cua behavior_cloning/train_il_v4.ipynb.
+        # ppo/ppo_agent.py.__init__ va §12 cua behavior_cloning/train_il_v9.ipynb.
         "actor_lr": 2e-5, "critic_lr": 3e-4, "critic_warmup_updates": 10,
         # [steer, longitudinal]. std(steer) = e^-3 = 0.05, du de tham do quanh mot lenh lai
         # co bien do dien hinh 0.005-0.03 ma khong lang xe ra khoi lan ngay rollout dau.
@@ -116,6 +137,17 @@ def load_config(algorithm, argv=None):
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--il-checkpoint", default=None, help="Checkpoint IL (.pth) de warm-start actor")
     parser.add_argument("--output", default=None, help="Thu muc luu checkpoint + log CSV")
+    parser.add_argument("--realtime", dest="realtime", action="store_true", default=None,
+                         help="Ghim mo phong ve toc do thuc de xem cho de nhin. Lam CHAM "
+                              "training — chi dung khi dang ngoi xem")
+    parser.add_argument("--spectator", dest="spectator_follow", action="store_true",
+                         default=None,
+                         help="Keo camera cua so CARLA bam theo xe de xem truc tiep. Chi anh "
+                              "huong hinh anh, khong doi gi ve train")
+    parser.add_argument("--town", default=None,
+                         help="Ban do nap truoc khi chay (vd Town04). Bo qua = dung the gioi "
+                              "dang chay. Town03 co 44%% waypoint la nga tu nen la lua chon "
+                              "kem cho bam lan; Town01/Town04 tot hon")
     parser.add_argument("--resume", default=None, help="Checkpoint DRL (.pt) de resume train / dung de eval")
     parser.add_argument("--no-warm-start", dest="warm_start", action="store_false", default=None,
                          help="Bo qua warm-start IL — actor khoi tao ngau nhien (chi de doi chung)")
@@ -161,12 +193,16 @@ def load_config(algorithm, argv=None):
 
     for key in ("host", "port", "il_checkpoint", "output", "total_steps", "n_steps",
                 "buffer_capacity", "width", "height", "obs_width", "obs_height",
-                "batch_size", "device", "action_repeat", "max_episode_steps"):
+                "batch_size", "device", "action_repeat", "max_episode_steps", "town"):
         value = getattr(args, key, None)
         if value is not None:
             config[key] = value
     if args.warm_start is not None:
         config["warm_start"] = args.warm_start
+    if args.spectator_follow is not None:
+        config["spectator_follow"] = args.spectator_follow
+    if args.realtime is not None:
+        config["realtime"] = args.realtime
 
     config["_resume"] = args.resume
     config["_episodes"] = args.episodes
