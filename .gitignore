@@ -94,7 +94,13 @@ outputs/
 # 8. MODEL CHECKPOINTS & ML ARTIFACTS (thường hàng GB)
 # -----------------------------------------------------------
 checkpoints/
+# `models/` nham vao checkpoint ML. CAN BAN: core.ignorecase = true (mac dinh tren
+# Windows/macOS) khien luat nay khop ca `Models/` — thu muc MA NGUON cua WPF. Hau qua da
+# xay ra that: 5 file .cs trong CarlaDashBoard.Wpf/Models/ chua bao gio duoc commit, nen
+# mot ban clone moi KHONG BUILD DUOC app. Mo lai duong cho dung thu muc do.
 models/
+!CarlaDashBoard/CarlaDashBoard.Wpf/Models/
+!CarlaDashBoard/CarlaDashBoard.Wpf/Models/**
 runs/
 wandb/
 mlruns/
