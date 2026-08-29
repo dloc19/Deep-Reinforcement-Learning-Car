@@ -135,7 +135,17 @@ public sealed partial class RouteMapViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task StartDrivingAsync()
+    private Task StartDrivingAsync() => StartModeAsync("ASTAR_AUTOPILOT");
+
+    /// <summary>
+    /// Đi cùng tuyến A* nhưng để policy đã huấn luyện bám làn; pure-pursuit chỉ cầm lái qua
+    /// ngã tư và lúc đổi làn — vì observation của policy không chứa hướng rẽ nên nó không thể
+    /// tự quyết định đi nhánh nào (xem bridge/modes/route_learned_autopilot.py).
+    /// </summary>
+    [RelayCommand]
+    private Task StartDrivingWithPolicyAsync() => StartModeAsync("ROUTE_DRL_AUTOPILOT");
+
+    private async Task StartModeAsync(string mode)
     {
         if (!HasRoute)
         {
@@ -144,7 +154,7 @@ public sealed partial class RouteMapViewModel : ObservableObject
         }
         try
         {
-            await _connection.Control.SendAsync(new { type = "SetMode", mode = "ASTAR_AUTOPILOT" });
+            await _connection.Control.SendAsync(new { type = "SetMode", mode });
         }
         catch (Exception ex)
         {

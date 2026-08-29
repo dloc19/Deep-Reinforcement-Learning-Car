@@ -64,9 +64,14 @@
                         <Run Text=" · "/>
                         <Run Text="{Binding RouteEtaS, StringFormat={}~{0:0}s, Mode=OneWay}"/>
                     </TextBlock>
-                    <Button Content="▶ Bắt đầu lái" Command="{Binding StartDrivingCommand}"
+                    <Button Content="▶ Lái bằng DRL theo tuyến" Command="{Binding StartDrivingWithPolicyCommand}"
                             Style="{StaticResource AccentButton}" Margin="0,14,0,0" HorizontalAlignment="Stretch"/>
-                    <TextBlock Text="chuyển mode sang A* Autopilot" Style="{StaticResource SoftText}" FontSize="11" Margin="0,6,0,0"/>
+                    <TextBlock Text="policy bám làn, pure-pursuit qua ngã tư (ROUTE_DRL_AUTOPILOT)"
+                               Style="{StaticResource SoftText}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                    <Button Content="▶ Lái bằng pure-pursuit" Command="{Binding StartDrivingCommand}"
+                            Margin="0,10,0,0" HorizontalAlignment="Stretch"/>
+                    <TextBlock Text="đối chứng: không dùng model (ASTAR_AUTOPILOT)"
+                               Style="{StaticResource SoftText}" FontSize="11" Margin="0,6,0,0"/>
                 </StackPanel>
 
                 <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource SoftText}" FontSize="11"

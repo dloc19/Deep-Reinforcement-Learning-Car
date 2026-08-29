@@ -41,5 +41,13 @@ public sealed class ModeOption
             Description = "Lái bằng policy PPO/SAC đã huấn luyện (checkpoint cấu hình ở Bridge Server, xem README).",
             Implemented = true, // Phase 4
         },
+        new()
+        {
+            WireName = "ROUTE_DRL_AUTOPILOT",
+            DisplayName = "Route + DRL Autopilot",
+            Description = "Đi theo tuyến A* tới điểm đích, bám làn bằng policy đã huấn luyện; " +
+                          "pure-pursuit chỉ cầm lái qua ngã tư và lúc đổi làn. Cần chọn đích trước.",
+            Implemented = true, // Phase 5
+        },
     };
 }

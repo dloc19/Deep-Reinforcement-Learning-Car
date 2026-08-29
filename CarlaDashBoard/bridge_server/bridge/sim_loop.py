@@ -18,6 +18,7 @@ import carla
 from . import il_drl_bridge, map_graph, modes, protocol, route_planning, telemetry
 from .carla_session import CarlaSession
 from .modes.astar_autopilot import AstarAutopilotMode, RouteContext
+from .modes.route_learned_autopilot import RouteLearnedAutopilotMode
 from .modes.learned_autopilot import LearnedAutopilotMode
 
 logger = logging.getLogger("bridge.sim_loop")
@@ -160,6 +161,8 @@ class SimLoop:
                 new_mode = self._build_il_mode()
             elif mode_name == protocol.MODE_DRL_AUTOPILOT:
                 new_mode = self._build_drl_mode()
+            elif mode_name == protocol.MODE_ROUTE_DRL_AUTOPILOT:
+                new_mode = self._build_route_drl_mode()
             else:
                 new_mode = modes.build(mode_name, self.cfg)
             new_mode.start(self.session)
@@ -281,7 +284,13 @@ class SimLoop:
         return LearnedAutopilotMode(protocol.MODE_IL_AUTOPILOT, ns, contract, predict,
                                     action_repeat=self._learned_action_repeat(contract))
 
-    def _build_drl_mode(self):
+    def _drl_predictor(self):
+        """(namespace, contract, predict, action_repeat) cho checkpoint DRL dang cau hinh.
+
+        Tach rieng vi HAI mode dung chung no: DRL_AUTOPILOT (bam lan thuan) va
+        ROUTE_DRL_AUTOPILOT (bam lan theo tuyen A*). Nap checkpoint hai lan cho hai mode se
+        ton VRAM gap doi ma khong duoc gi — cache o `_drl_predictor_cache` ben duoi lo phan
+        do, ham nay chi lo cho hai noi goi cung mot duong."""
         ns = self._get_drl_training()
         il_checkpoint_path = self._resolve_checkpoint_path(
             self.cfg.il_checkpoint_path, "behavior_cloning/best_il_model.pth")
@@ -298,8 +307,20 @@ class SimLoop:
                             resolved_algo, algo)
             self._drl_predictor_cache = (cache_key, contract, predict)
         _, contract, predict = self._drl_predictor_cache
+        return ns, contract, predict, self._learned_action_repeat(contract)
+
+    def _build_drl_mode(self):
+        ns, contract, predict, action_repeat = self._drl_predictor()
         return LearnedAutopilotMode(protocol.MODE_DRL_AUTOPILOT, ns, contract, predict,
-                                    action_repeat=self._learned_action_repeat(contract))
+                                    action_repeat=action_repeat)
+
+    def _build_route_drl_mode(self):
+        """Lai theo tuyen A* + bam lan bang policy. Khong tu nap gi: dung lai predictor da
+        cache va `_get_router_plan()` da co, chi dieu phoi giua chung."""
+        ns, contract, predict, action_repeat = self._drl_predictor()
+        return RouteLearnedAutopilotMode(
+            protocol.MODE_ROUTE_DRL_AUTOPILOT, self.cfg, self.route_context,
+            self._get_router_plan(), ns, contract, predict, action_repeat=action_repeat)
 
     def _learned_action_repeat(self, contract):
         """So world tick giu nguyen mot lenh de policy chay dung nhip `control_dt` cua
