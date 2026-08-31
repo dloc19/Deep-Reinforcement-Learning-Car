@@ -129,8 +129,21 @@ class CarlaLaneKeepEnv(object):
             settings.synchronous_mode = False
             settings.fixed_delta_seconds = None
             world.apply_settings(settings)
-        print("Dang nap ban do %s (dang chay: %s) ..." % (town, current))
-        self.client.load_world(town)
+        print("Dang nap ban do %s (dang chay: %s) — co the mat vai phut ..." % (town, current))
+        # `load_world()` phai chay duoi mot timeout RIENG, dai hon nhieu timeout dieu khien
+        # thuong ngay. Do tren may nay: `timeout` mac dinh 20s KHONG du de server dung xong
+        # Town04 (33.8 km lan). Het 20s thi client bo cuoc voi "failed to connect to newly
+        # created map" — va server ket lai o trang thai nap do, khong tra loi bat ky client
+        # nao nua (thu lai voi timeout 120s van khong vao duoc), phai tat CarlaUE4 di bat
+        # lai. Tuc mot timeout dat qua ngan o day khong chi lam that bai lenh nay, no GIET
+        # ca server. Tra ve timeout cu ngay sau do: 300s cho mot lenh dieu khien thuong
+        # ngay thi qua dai, se bien mot server treo thanh mot lan train treo im lang.
+        control_timeout = float(self.cfg.get("timeout", 20.0))
+        self.client.set_timeout(float(self.cfg.get("map_load_timeout", 300.0)))
+        try:
+            self.client.load_world(town)
+        finally:
+            self.client.set_timeout(control_timeout)
 
     def _tick(self):
         """Mot tick vat ly, kem hai thu chi phuc vu NGUOI XEM.
@@ -144,10 +157,10 @@ class CarlaLaneKeepEnv(object):
         Client keo duoc bao nhieu thi CARLA chay bay nhieu: do duoc 58 tick/s x 0.05s =
         nhanh gap 2.9 lan thuc te. Khong sai ve vat ly, nhung nhin thi nhu tua nhanh.
         """
-        self.world.tick()
+        frame_id = self.world.tick()
         self._update_spectator()
         if not self._realtime:
-            return
+            return frame_id
         now = time.perf_counter()
         if self._next_tick_wall is None:
             self._next_tick_wall = now
@@ -167,6 +180,7 @@ class CarlaLaneKeepEnv(object):
             time.sleep(remaining - _SPIN_MARGIN)
         while time.perf_counter() < self._next_tick_wall:
             pass
+        return frame_id
 
     def _update_spectator(self):
         """Dat camera cua so CARLA phia sau + tren cao xe ego, nhin cung huong xe.
@@ -219,14 +233,18 @@ class CarlaLaneKeepEnv(object):
     def _on_camera_image(self, image):
         # Same decode as `data_collection/carla_collector/writer.py`: raw class ID lives in
         # the red channel of the semantic segmentation camera's BGRA output.
+        #
+        # Kem theo `image.frame`: `_get_seg_frame()` PHAI ghep dung anh cua dung tick ma
+        # `_tick()` vua tinh (xem docstring o do). Hang doi khong gioi han kich thuoc va
+        # KHONG bo frame nao: o sync mode moi tick sinh dung mot anh va vong lap tieu thu
+        # dung mot anh, nen do sau hang doi luon ~1. Ban cu dung maxsize=1 + bo cai cu nhat,
+        # tuc no vut di dung cai frame ma tick ke tiep dang cho -> `get()` treo het
+        # `frame_timeout` roi nem RuntimeError, giet ca lan train.
+        camera_queue = self._seg_queue
+        if camera_queue is None:
+            return      # callback con bay giua chung sau khi _destroy_actors() da chay
         array = np.frombuffer(image.raw_data, dtype=np.uint8).reshape((image.height, image.width, 4))
-        labels = array[:, :, 2].copy()
-        if self._seg_queue.full():
-            try:
-                self._seg_queue.get_nowait()
-            except queue.Empty:
-                pass
-        self._seg_queue.put_nowait(labels)
+        camera_queue.put((image.frame, array[:, :, 2].copy()))
 
     def _spawn_actors(self):
         blueprint_library = self.world.get_blueprint_library()
@@ -252,7 +270,7 @@ class CarlaLaneKeepEnv(object):
                 z=self.cfg.get("camera_z", 2.4)),
             carla.Rotation(pitch=self.cfg.get("camera_pitch", -5.0)),
         )
-        self._seg_queue = queue.Queue(maxsize=1)
+        self._seg_queue = queue.Queue()
         self.camera = self.world.spawn_actor(
             self._camera_blueprint(), camera_tf, attach_to=self.vehicle,
             attachment_type=carla.AttachmentType.Rigid)
@@ -308,8 +326,7 @@ class CarlaLaneKeepEnv(object):
         seg = None
         self._next_tick_wall = None      # reset ton thoi gian -> dung co duoi cho bu
         for _ in range(self.cfg.get("warmup_ticks", 4)):
-            self._tick()
-            seg = self._get_seg_frame()
+            seg = self._get_seg_frame(self._tick())
         state = self._build_state(seg)
         return self._make_observation(state), {"state": state}
 
@@ -333,8 +350,7 @@ class CarlaLaneKeepEnv(object):
             # apply_control() lai o MOI tick: CARLA giu lenh cuoi cung nen mot lan la du,
             # nhung goi lai la vo hai va chong truong hop mode/agent khac chen ngang.
             self.vehicle.apply_control(control)
-            self._tick()
-            seg = self._get_seg_frame()
+            seg = self._get_seg_frame(self._tick())
         self.step_count += 1
 
         state = self._build_state(seg)
@@ -347,15 +363,36 @@ class CarlaLaneKeepEnv(object):
         return self._make_observation(state), reward, terminated, truncated, info
 
     # ------------------------------------------------------------------------- internals
-    def _get_seg_frame(self):
+    def _get_seg_frame(self, frame_id):
+        """Anh segmentation cua DUNG tick `frame_id` (gia tri `world.tick()` tra ve).
+
+        Khop frame la bat buoc, khong phai cho chac. `data_collection` — bo du lieu ma
+        checkpoint IL duoc train tren do — khop chat theo `image.frame`
+        (carla_collector/sensors.py: `gate.wants(image.frame, ...)` roi
+        `synchronizer.put(image.frame, ...)`), nen moi mau IL hoc la mot cap (anh tick N,
+        trang thai xe tick N). Ban truoc cua ham nay chi lay "cai gi dang nam trong hang
+        doi" roi ghep voi transform xe doc o tick hien tai: mot do lech mot tick khong bao
+        loi gi, chi lam policy warm-start nhin thay mot cap (anh, trang thai) khac loai voi
+        cap no da hoc. O 8 m/s, mot tick 0.05s = 0.4 m sai lech.
+
+        Callback camera chay tren thread rieng nen anh ve SAU khi `world.tick()` da tra ve;
+        cho o day la dung, va la dung cach vi du sync chinh thuc cua CARLA lam.
+        """
         timeout = self.cfg.get("frame_timeout", 5.0)
-        try:
-            return self._seg_queue.get(timeout=timeout)
-        except queue.Empty:
-            raise RuntimeError(
-                "Khong nhan duoc frame camera segmentation trong %.1fs — kiem tra CARLA "
-                "server con chay, fps cau hinh, va khong co client passive nao khac dang "
-                "giu synchronous_mode." % timeout)
+        deadline = time.time() + timeout
+        while True:
+            try:
+                frame, labels = self._seg_queue.get(timeout=max(deadline - time.time(), 0.0))
+            except queue.Empty:
+                raise RuntimeError(
+                    "Khong nhan duoc frame camera segmentation cho tick %s trong %.1fs — "
+                    "kiem tra CARLA server con chay, fps cau hinh, va khong co client "
+                    "passive nao khac dang giu synchronous_mode." % (frame_id, timeout))
+            if frame >= frame_id:
+                # `>` thay vi `==` chi xay ra neu mot anh bi mat hoan toan; lay anh moi nhat
+                # van dung hon la treo cho mot frame khong bao gio den.
+                return labels
+            # frame < frame_id: anh cua tick da qua (vd con sot lai tu warmup) -> bo, doi tiep
 
     def _build_state(self, seg):
         state = build_vehicle_state(

@@ -15,7 +15,7 @@
   "reward": {
     "w_speed": 1.0, "w_lane_offset": 1.0, "w_heading": 0.5,
     "w_steer_delta": 1.0, "w_long_delta": 0.5, "w_yaw_rate": 0.1,
-    "off_lane_penalty": 5.0, "collision_penalty": 50.0, "lane_invasion_penalty": 1.0
+    "off_lane_penalty": 5.0, "collision_penalty": 300.0, "lane_invasion_penalty": 1.0
   },
   "ppo": {
     "il_checkpoint": "../behavior_cloning/best_il_model.pth",
@@ -24,7 +24,7 @@
     "actor_lr": 2e-05, "critic_lr": 0.0003,
     "critic_warmup_updates": 4,
     "log_std_init": [-3.0, -1.5],
-    "gae_lambda": 0.95, "clip_range": 0.2, "value_clip_range": 0.2,
+    "gae_lambda": 0.95, "clip_range": 0.2, "value_clip_range": null,
     "entropy_coef": 0.0, "value_coef": 0.5, "max_grad_norm": 0.5,
     "epochs": 4, "batch_size": 64, "target_kl": 0.02,
     "total_steps": 2048, "n_steps": 256,

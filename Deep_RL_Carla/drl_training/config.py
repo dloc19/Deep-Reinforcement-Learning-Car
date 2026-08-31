@@ -18,6 +18,10 @@ from pathlib import Path
 COMMON_DEFAULTS = {
     # connection
     "host": "127.0.0.1", "port": 2000, "timeout": 20.0,
+    # Timeout RIENG cho `client.load_world()` (xem CarlaLaneKeepEnv._load_town). Tach khoi
+    # `timeout` vi hai viec khac han nhau ve do lon: mot lenh dieu khien tra loi trong vai
+    # chuc mili giay, con nap mot ban do lon mat hang phut.
+    "map_load_timeout": 300.0,
     # camera / env
     # width/height  = do phan giai CAMERA segmentation (khop collector: 480x384).
     # obs_width/obs_height = do phan giai OBSERVATION dua vao mang, sau khi
@@ -59,7 +63,14 @@ COMMON_DEFAULTS = {
     # reward weights (docs/csv_fields_by_task.md — "DRL" section)
     "w_speed": 1.0, "w_lane_offset": 1.0, "w_heading": 0.5,
     "w_steer_delta": 1.0, "w_long_delta": 0.5, "w_yaw_rate": 0.1,
-    "off_lane_penalty": 5.0, "collision_penalty": 50.0, "lane_invasion_penalty": 1.0,
+    "off_lane_penalty": 5.0,
+    # 50.0 (ban cu) bi so hang toc do nuot: `w_speed * forward_speed_mps` cho toi +8.3 moi
+    # buoc, nen dam xe chi ton bang 6 buoc chay. Do tren runs/ppo_lane_keep: 14/19 episode
+    # ket thuc bang va cham ma van duoc 1000-3600 diem — tin hieu hoc duoc la "cu dam, mien
+    # la chay nhanh truoc do". 300 = ~40 buoc = 8 giay lai xe, du de va cham thanh mot su
+    # kien dat do that su. Van la mot lua chon can chinh tay: neu xe tro nen qua rut re
+    # (dung im de khong bao gio dam) thi ha xuong, hoac tang `w_speed`.
+    "collision_penalty": 300.0, "lane_invasion_penalty": 1.0,
     # Trong nga tu, `lane_offset_m`/`heading_error_rad`/`off_lane` la phep do RAC (waypoint
     # tham chieu nhay sang nhanh khac). Mac dinh tat cac so hang do o day; dat False neu
     # muon chay doi chung voi hanh vi cu. Xem envs/carla_lane_keep_env.py::_compute_reward.
@@ -79,7 +90,9 @@ ALGO_DEFAULTS = {
         # co bien do dien hinh 0.005-0.03 ma khong lang xe ra khoi lan ngay rollout dau.
         "log_std_init": (-3.0, -1.5),
         "gae_lambda": 0.95, "clip_range": 0.2,
-        "value_clip_range": 0.2, "entropy_coef": 0.0, "value_coef": 0.5,
+        # null = TAT clip value; xem ppo/ppo_agent.py.__init__ (nguong tuyet doi 0.2 lam
+        # critic cham 12 lan o thang do return 200-800 cua env nay).
+        "value_clip_range": None, "entropy_coef": 0.0, "value_coef": 0.5,
         "max_grad_norm": 0.5, "epochs": 10, "batch_size": 128, "target_kl": 0.02,
         # total_steps dem QUYET DINH: 200k x 0.2s = 11 gio mo phong. Con so cu (2 trieu)
         # duoc dat khi 1 step = 1 tick 0.1s; giu nguyen se thanh 111 gio mo phong.
@@ -157,6 +170,10 @@ def load_config(algorithm, argv=None):
                               "phai bang 1/control_dt cua checkpoint IL (mac dinh 20/4 = 5 Hz)")
     parser.add_argument("--max-episode-steps", type=int, default=None,
                          help="So QUYET DINH toi da moi episode (khong phai so tick)")
+    parser.add_argument("--seed", type=int, default=None,
+                         help="Seed cho RNG chon diem spawn cua env. Doi gia tri nay giua "
+                              "cac phien train noi tiep nhau, neu khong moi phien se gap y "
+                              "het mot chuoi kich ban")
     parser.add_argument("--n-steps", type=int, default=None, help="[train_ppo.py] so buoc moi rollout/update")
     parser.add_argument("--buffer-capacity", type=int, default=None,
                          help="[train_sac.py] so transition toi da trong replay buffer — "
@@ -193,7 +210,7 @@ def load_config(algorithm, argv=None):
 
     for key in ("host", "port", "il_checkpoint", "output", "total_steps", "n_steps",
                 "buffer_capacity", "width", "height", "obs_width", "obs_height",
-                "batch_size", "device", "action_repeat", "max_episode_steps", "town"):
+                "batch_size", "device", "action_repeat", "max_episode_steps", "town", "seed"):
         value = getattr(args, key, None)
         if value is not None:
             config[key] = value

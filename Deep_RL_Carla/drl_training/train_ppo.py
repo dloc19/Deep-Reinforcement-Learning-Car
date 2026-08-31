@@ -105,6 +105,11 @@ def main():
     global_step = config_start_update * config["n_steps"]
     n_updates = max(1, config["total_steps"] // config["n_steps"])
     recent_episode_rewards = []
+    # So update da hoan tat TRON VEN — khac voi bien `update` cua vong lap, vi `update` tro
+    # toi update dang chay do dang. Nhanh KeyboardInterrupt ben duoi luu theo bien nay de
+    # checkpoint khan cap mang dung bo dem: khong lui lai mot update da xong, cung khong
+    # nhay qua mot rollout chua kip update.
+    updates_done = config_start_update
 
     try:
         for update in range(config_start_update, n_updates):
@@ -153,6 +158,7 @@ def main():
             # trong so warm-start trong vai tram update dau.
             freeze_actor = update < agent.critic_warmup_updates
             stats = agent.update(buffer, advantages, returns, freeze_actor=freeze_actor)
+            updates_done = update + 1
 
             elapsed = max(time.time() - update_start, 1e-6)
             mean_reward = float(np.mean(recent_episode_rewards)) if recent_episode_rewards else float("nan")
@@ -176,7 +182,13 @@ def main():
                 print("Da luu checkpoint:", ckpt_path)
     except KeyboardInterrupt:
         print("\nDung boi Ctrl+C — luu checkpoint truoc khi thoat...")
-        save_checkpoint(output_dir / "ppo_interrupted.pt", agent, update, config, contract)
+        save_checkpoint(output_dir / "ppo_interrupted.pt", agent, updates_done, config, contract)
+        # Ghi CA `ppo_latest.pt`: do la file duy nhat ma lenh resume tro toi. Neu chi ghi
+        # ppo_interrupted.pt thi mot lan Ctrl+C se lam phien train sau am tham resume tu lan
+        # luu dinh ky gan nhat va chay lai toi `save_every_updates` update — sinh cac dong
+        # `update` TRUNG LAP trong update_log.csv, lam hong duong cong khi ve bieu do.
+        save_checkpoint(output_dir / "ppo_latest.pt", agent, updates_done, config, contract)
+        print("Da luu ppo_interrupted.pt + ppo_latest.pt | updates_done =", updates_done)
     finally:
         env.close()
         episode_log.close()

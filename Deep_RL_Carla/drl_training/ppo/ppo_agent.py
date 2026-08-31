@@ -38,7 +38,21 @@ class PPOAgent:
         self.frozen_bn = freeze_batchnorm(self.actor, self.critic)
 
         self.clip_range = config.get("clip_range", 0.2)
-        self.value_clip_range = config.get("value_clip_range", 0.2)
+        # `None` = TAT clip value. Mac dinh cua Stable-Baselines3 (`clip_range_vf=None`)
+        # cung la None, va ly do rat cu the: nguong nay o don vi TUYET DOI cua ham gia tri,
+        # khong phai ti le. Reward cua env nay ~2-8.6 moi buoc, gamma 0.99 -> return co do
+        # lon 200-800; kep buoc dich chuyen cua critic o +/-0.2 nghia la no can hang nghin
+        # update moi bam kip. Do lai dung ham loss ben duoi voi return muc tieu 800, 50
+        # update, critic_lr 3e-4:
+        #     clip 0.2  -> V = 27.5  (3.4% muc tieu)
+        #     clip 2.0  -> V = 127.3 (15.9%)
+        #     clip 20.0 -> V = 318.6 (39.8%)
+        #     None      -> V = 318.7 (39.8%)  <- tran that
+        # Tuc clip 0.2 lam critic cham 12 lan. Trieu chung tren log that: value_loss dung im
+        # hoac vot len (5696->9175->8741 tren runs/ppo_lane_keep, 3610->...->8175 o smoke
+        # test) thay vi giam. Chi bat lai — voi gia tri cung do lon voi return — neu return
+        # da duoc chuan hoa.
+        self.value_clip_range = config.get("value_clip_range", None)
         self.entropy_coef = config.get("entropy_coef", 0.0)
         self.value_coef = config.get("value_coef", 0.5)
         self.max_grad_norm = config.get("max_grad_norm", 0.5)
@@ -103,12 +117,15 @@ class PPOAgent:
                 policy_loss = -torch.min(surr1, surr2).mean()
 
                 values = self.critic(batch["seg"], batch["scalar"])
-                values_clipped = batch["old_values"] + torch.clamp(
-                    values - batch["old_values"], -self.value_clip_range, self.value_clip_range)
-                value_loss = 0.5 * torch.max(
-                    F.mse_loss(values, batch["returns"], reduction="none"),
-                    F.mse_loss(values_clipped, batch["returns"], reduction="none"),
-                ).mean()
+                if self.value_clip_range is None:
+                    value_loss = 0.5 * F.mse_loss(values, batch["returns"])
+                else:
+                    values_clipped = batch["old_values"] + torch.clamp(
+                        values - batch["old_values"], -self.value_clip_range, self.value_clip_range)
+                    value_loss = 0.5 * torch.max(
+                        F.mse_loss(values, batch["returns"], reduction="none"),
+                        F.mse_loss(values_clipped, batch["returns"], reduction="none"),
+                    ).mean()
 
                 entropy_loss = -entropy.mean()
 
