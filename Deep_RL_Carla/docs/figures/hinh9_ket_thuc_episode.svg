@@ -1,0 +1,72 @@
+<svg viewBox="0 0 900 340" role="img" aria-label="Máy trạng thái kết thúc episode: va chạm hoặc lệch làn liên tục là thất bại thật, còn hết giờ là sự kiện trung tính được hai thuật toán xử lý theo hai cách khác nhau" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="f9-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="f9-ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#A65BB8"/>
+    </marker>
+  </defs>
+
+  <text x="0" y="16" font-size="11" fill="currentColor" fill-opacity=".55" letter-spacing=".06em">MÁY TRẠNG THÁI MỘT EPISODE</text>
+  <line x1="0" y1="24" x2="900" y2="24" stroke="currentColor" stroke-opacity=".25"/>
+
+  <!-- trang thai chay -->
+  <rect x="0" y="120" width="176" height="70" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".35"/>
+  <text x="88" y="146" font-size="13" font-weight="600" text-anchor="middle" fill="currentColor">Đang chạy</text>
+  <text x="88" y="166" font-size="11" text-anchor="middle" fill="currentColor" fill-opacity=".72">t ← t + 1 mỗi 0,2 s</text>
+  <text x="88" y="182" font-size="11" text-anchor="middle" fill="currentColor" fill-opacity=".72">đếm chuỗi lệch làn</text>
+
+  <!-- ba nhanh -->
+  <rect x="272" y="46" width="212" height="58" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".45"/>
+  <text x="286" y="68" font-size="12" font-weight="600" fill="currentColor">Va chạm mới</text>
+  <text x="286" y="88" font-size="11" fill="currentColor" fill-opacity=".72">phạt 50, kết thúc ngay</text>
+
+  <rect x="272" y="126" width="212" height="58" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".45"/>
+  <text x="286" y="148" font-size="12" font-weight="600" fill="currentColor">Lệch làn ≥ 10 bước liên tục</text>
+  <text x="286" y="168" font-size="11" fill="currentColor" fill-opacity=".72">2 giây — dung sai có kiểm soát</text>
+
+  <rect x="272" y="206" width="212" height="58" rx="3" fill="#A65BB8" fill-opacity=".1" stroke="#A65BB8"/>
+  <text x="286" y="228" font-size="12" font-weight="600" fill="currentColor">t = 500 (hết giờ)</text>
+  <text x="286" y="248" font-size="11" fill="currentColor" fill-opacity=".72">100 giây mô phỏng</text>
+
+  <!-- ket qua -->
+  <rect x="556" y="66" width="150" height="72" rx="3" fill="currentColor" fill-opacity=".07" stroke="currentColor" stroke-opacity=".55"/>
+  <text x="631" y="94" font-size="13" font-weight="600" text-anchor="middle" fill="currentColor">terminated</text>
+  <text x="631" y="114" font-size="11" text-anchor="middle" fill="currentColor" fill-opacity=".72">thất bại thật</text>
+  <text x="631" y="130" font-size="11" text-anchor="middle" fill="currentColor" fill-opacity=".72">giá trị tương lai = 0</text>
+
+  <rect x="556" y="196" width="150" height="72" rx="3" fill="#A65BB8" fill-opacity=".12" stroke="#A65BB8"/>
+  <text x="631" y="224" font-size="13" font-weight="600" text-anchor="middle" fill="currentColor">truncated</text>
+  <text x="631" y="244" font-size="11" text-anchor="middle" fill="currentColor" fill-opacity=".72">trung tính về giá trị</text>
+  <text x="631" y="260" font-size="11" text-anchor="middle" fill="currentColor" fill-opacity=".72">episode vẫn "đang tốt"</text>
+
+  <!-- xu ly khac nhau -->
+  <rect x="754" y="176" width="146" height="52" rx="3" fill="currentColor" fill-opacity=".04" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="4 3"/>
+  <text x="766" y="196" font-size="11" font-weight="600" fill="currentColor">PPO</text>
+  <text x="766" y="212" font-size="10.5" fill="currentColor" fill-opacity=".72">cộng γ·V(o′) vào r</text>
+  <text x="766" y="224" font-size="10.5" fill="currentColor" fill-opacity=".6">rồi vẫn lưu vào rollout</text>
+
+  <rect x="754" y="240" width="146" height="52" rx="3" fill="currentColor" fill-opacity=".04" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="4 3"/>
+  <text x="766" y="260" font-size="11" font-weight="600" fill="currentColor">SAC</text>
+  <text x="766" y="276" font-size="10.5" fill="currentColor" fill-opacity=".72">KHÔNG lưu transition này</text>
+  <text x="766" y="288" font-size="10.5" fill="currentColor" fill-opacity=".6">vì o′ sẽ là episode khác</text>
+
+  <!-- mui ten -->
+  <g fill="none">
+    <path d="M 176 140 L 224 140 L 224 75 L 264 75" stroke="currentColor" stroke-opacity=".55" marker-end="url(#f9-ar)"/>
+    <path d="M 176 155 L 264 155" stroke="currentColor" stroke-opacity=".55" marker-end="url(#f9-ar)"/>
+    <path d="M 176 170 L 224 170 L 224 235 L 264 235" stroke="#A65BB8" marker-end="url(#f9-ap)"/>
+    <path d="M 484 75 L 520 75 L 520 102 L 548 102" stroke="currentColor" stroke-opacity=".55" marker-end="url(#f9-ar)"/>
+    <path d="M 484 155 L 520 155 L 520 102 L 548 102" stroke="currentColor" stroke-opacity=".55" marker-end="url(#f9-ar)"/>
+    <path d="M 484 235 L 548 235" stroke="#A65BB8" marker-end="url(#f9-ap)"/>
+    <path d="M 706 216 L 730 216 L 730 202 L 746 202" stroke="currentColor" stroke-opacity=".45" marker-end="url(#f9-ar)"/>
+    <path d="M 706 246 L 730 246 L 730 266 L 746 266" stroke="currentColor" stroke-opacity=".45" marker-end="url(#f9-ar)"/>
+    <path d="M 631 138 L 631 160 L 88 160 L 88 116" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="5 4" marker-end="url(#f9-ar)"/>
+  </g>
+  <text x="200" y="132" font-size="10" text-anchor="end" fill="currentColor" fill-opacity=".6"> </text>
+  <text x="300" y="300" font-size="11" fill="currentColor" fill-opacity=".7">env.reset() — cả ba nhánh đều bắt đầu lại một episode mới ở điểm spawn ngẫu nhiên</text>
+
+  <line x1="0" y1="316" x2="900" y2="316" stroke="currentColor" stroke-opacity=".2"/>
+  <text x="0" y="334" font-size="11" fill="currentColor" fill-opacity=".72">Gộp "hết giờ" vào "thất bại" là lỗi kinh điển: agent bị dạy rằng sống tới hết giờ không có giá trị tiếp diễn (Pardo et al., 2018).</text>
+</svg>

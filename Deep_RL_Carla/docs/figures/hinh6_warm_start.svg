@@ -1,0 +1,73 @@
+<svg viewBox="0 0 900 400" role="img" aria-label="Ánh xạ trọng số từ SteeringNet của bước học bắt chước sang actor học tăng cường: phần trích đặc trưng và hai lớp đầu được sao chép theo tên tensor, các đầu ra không có tương đương thì khởi tạo ngẫu nhiên" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="f6-ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7FB522"/>
+    </marker>
+    <marker id="f6-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text x="0" y="16" font-size="11" fill="currentColor" fill-opacity=".55" letter-spacing=".06em">CHECKPOINT IL — SteeringNet (train_il_v9.ipynb)</text>
+  <text x="560" y="16" font-size="11" fill="currentColor" fill-opacity=".55" letter-spacing=".06em">ACTOR DRL (PPO / SAC)</text>
+  <line x1="0" y1="24" x2="330" y2="24" stroke="currentColor" stroke-opacity=".25"/>
+  <line x1="560" y1="24" x2="900" y2="24" stroke="currentColor" stroke-opacity=".25"/>
+
+  <g font-size="11">
+    <!-- IL -->
+    <rect x="0" y="44" width="290" height="40" rx="3" fill="#7FB522" fill-opacity=".12" stroke="#7FB522"/>
+    <text x="14" y="60" font-weight="600" fill="currentColor">conv.* · pool · cnn_fc.* · scalar_mlp.*</text>
+    <text x="14" y="76" fill="currentColor" fill-opacity=".7">trích đặc trưng — 232 nghìn tham số</text>
+
+    <rect x="0" y="100" width="290" height="34" rx="3" fill="#7FB522" fill-opacity=".12" stroke="#7FB522"/>
+    <text x="14" y="121" font-weight="600" fill="currentColor">head.0 — Linear 96→64</text>
+
+    <rect x="0" y="146" width="290" height="34" rx="3" fill="currentColor" fill-opacity=".04" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="4 3"/>
+    <text x="14" y="167" fill="currentColor" fill-opacity=".6">head.1 / head.2 — ELU, Dropout</text>
+
+    <rect x="0" y="192" width="290" height="34" rx="3" fill="#7FB522" fill-opacity=".12" stroke="#7FB522"/>
+    <text x="14" y="213" font-weight="600" fill="currentColor">head.3 — Linear 64→32</text>
+
+    <rect x="0" y="238" width="290" height="34" rx="3" fill="#7FB522" fill-opacity=".12" stroke="#7FB522"/>
+    <text x="14" y="259" font-weight="600" fill="currentColor">head.6 — Linear 32→2</text>
+
+    <rect x="0" y="284" width="290" height="34" rx="3" fill="currentColor" fill-opacity=".04" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="4 3"/>
+    <text x="14" y="305" fill="currentColor" fill-opacity=".6">đầu ra phụ — dự đoán d, ψ (chỉ dùng khi train IL)</text>
+
+    <!-- DRL -->
+    <rect x="610" y="44" width="290" height="40" rx="3" fill="#7FB522" fill-opacity=".12" stroke="#7FB522"/>
+    <text x="624" y="60" font-weight="600" fill="currentColor">backbone.*</text>
+    <text x="624" y="76" fill="currentColor" fill-opacity=".7">PolicyBackbone — kiến trúc phản chiếu 1:1</text>
+
+    <rect x="610" y="100" width="290" height="34" rx="3" fill="#7FB522" fill-opacity=".12" stroke="#7FB522"/>
+    <text x="624" y="121" font-weight="600" fill="currentColor">trunk_head.0</text>
+
+    <rect x="610" y="192" width="290" height="34" rx="3" fill="#7FB522" fill-opacity=".12" stroke="#7FB522"/>
+    <text x="624" y="213" font-weight="600" fill="currentColor">trunk_head.2</text>
+
+    <rect x="610" y="238" width="290" height="34" rx="3" fill="#7FB522" fill-opacity=".12" stroke="#7FB522"/>
+    <text x="624" y="259" font-weight="600" fill="currentColor">mean_head</text>
+
+    <rect x="610" y="292" width="290" height="52" rx="3" fill="currentColor" fill-opacity=".04" stroke="currentColor" stroke-opacity=".35" stroke-dasharray="5 4"/>
+    <text x="624" y="312" font-weight="600" fill="currentColor">Khởi tạo ngẫu nhiên — IL không có tương đương</text>
+    <text x="624" y="328" fill="currentColor" fill-opacity=".7">log σ (PPO) · log σ(s) head (SAC)</text>
+    <text x="624" y="342" fill="currentColor" fill-opacity=".7">ValueCritic (PPO) · TwinQNetwork (SAC)</text>
+  </g>
+
+  <!-- mui ten anh xa -->
+  <g stroke="#7FB522" stroke-width="1.6" fill="none">
+    <line x1="292" y1="64" x2="602" y2="64" marker-end="url(#f6-ag)"/>
+    <line x1="292" y1="117" x2="602" y2="117" marker-end="url(#f6-ag)"/>
+    <line x1="292" y1="209" x2="602" y2="209" marker-end="url(#f6-ag)"/>
+    <line x1="292" y1="255" x2="602" y2="255" marker-end="url(#f6-ag)"/>
+  </g>
+  <text x="447" y="56" font-size="10.5" text-anchor="middle" fill="#7FB522">sao chép theo TÊN tensor</text>
+  <line x1="292" y1="163" x2="360" y2="163" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="4 3"/>
+  <text x="368" y="167" font-size="10.5" fill="currentColor" fill-opacity=".6">bỏ — actor RL không dùng Dropout</text>
+  <line x1="292" y1="301" x2="360" y2="301" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="4 3"/>
+  <text x="368" y="305" font-size="10.5" fill="currentColor" fill-opacity=".6">bỏ — không có vai trò lúc suy luận</text>
+
+  <line x1="0" y1="360" x2="900" y2="360" stroke="currentColor" stroke-opacity=".2"/>
+  <text x="0" y="380" font-size="11" fill="currentColor" fill-opacity=".72">Fail-fast: thiếu bất kỳ khoá nào (ngoài danh sách cho phép) hoặc lệch shape đều ném lỗi ngay — vì một phần mạng âm thầm</text>
+  <text x="0" y="396" font-size="11" fill="currentColor" fill-opacity=".72">khởi tạo ngẫu nhiên trong khi ta tưởng đã warm-start là lỗi rất khó phát hiện: training vẫn chạy, chỉ kém hiệu quả hơn.</text>
+</svg>

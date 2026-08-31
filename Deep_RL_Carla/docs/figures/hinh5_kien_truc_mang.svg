@@ -1,0 +1,123 @@
+<svg viewBox="0 0 900 420" role="img" aria-label="Kiến trúc mạng: nhánh tích chập cho ảnh phân vùng và nhánh MLP cho vector vô hướng nối lại thành 96 chiều, qua trunk head 64 rồi 32, rẽ thành các đầu ra của PPO và SAC" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="f5-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="f5-ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#A65BB8"/>
+    </marker>
+  </defs>
+
+  <text x="0" y="16" font-size="11" fill="currentColor" fill-opacity=".55" letter-spacing=".06em">PHẦN DÙNG CHUNG — WARM-START TỪ IL</text>
+  <text x="640" y="16" font-size="11" fill="#A65BB8" letter-spacing=".06em">ĐẦU RA RIÊNG TỪNG THUẬT TOÁN</text>
+  <line x1="0" y1="24" x2="620" y2="24" stroke="currentColor" stroke-opacity=".25"/>
+  <line x1="640" y1="24" x2="900" y2="24" stroke="#A65BB8" stroke-opacity=".5"/>
+
+  <!-- nhanh anh -->
+  <rect x="0" y="46" width="112" height="52" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".35"/>
+  <text x="56" y="68" font-size="11.5" font-weight="600" text-anchor="middle" fill="currentColor">mask 4 lớp</text>
+  <text x="56" y="86" font-size="10.5" text-anchor="middle" fill="currentColor" fill-opacity=".7">4 × 192 × 240</text>
+
+  <g font-size="10.5">
+    <rect x="142" y="44" width="66" height="56" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".35"/>
+    <text x="175" y="64" text-anchor="middle" font-weight="600" fill="currentColor">conv 1</text>
+    <text x="175" y="80" text-anchor="middle" fill="currentColor" fill-opacity=".7">4→24, s2</text>
+    <text x="175" y="94" text-anchor="middle" fill="currentColor" fill-opacity=".55">k5</text>
+
+    <rect x="222" y="44" width="66" height="56" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".35"/>
+    <text x="255" y="64" text-anchor="middle" font-weight="600" fill="currentColor">conv 2</text>
+    <text x="255" y="80" text-anchor="middle" fill="currentColor" fill-opacity=".7">24→36, s2</text>
+    <text x="255" y="94" text-anchor="middle" fill="currentColor" fill-opacity=".55">k5</text>
+
+    <rect x="302" y="44" width="66" height="56" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".35"/>
+    <text x="335" y="64" text-anchor="middle" font-weight="600" fill="currentColor">conv 3</text>
+    <text x="335" y="80" text-anchor="middle" fill="currentColor" fill-opacity=".7">36→48, s2</text>
+    <text x="335" y="94" text-anchor="middle" fill="currentColor" fill-opacity=".55">k5</text>
+
+    <rect x="382" y="44" width="66" height="56" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".35"/>
+    <text x="415" y="64" text-anchor="middle" font-weight="600" fill="currentColor">conv 4</text>
+    <text x="415" y="80" text-anchor="middle" fill="currentColor" fill-opacity=".7">48→64, s2</text>
+    <text x="415" y="94" text-anchor="middle" fill="currentColor" fill-opacity=".55">k3</text>
+
+    <rect x="462" y="44" width="66" height="56" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".35"/>
+    <text x="495" y="64" text-anchor="middle" font-weight="600" fill="currentColor">conv 5</text>
+    <text x="495" y="80" text-anchor="middle" fill="currentColor" fill-opacity=".7">64→64, s1</text>
+    <text x="495" y="94" text-anchor="middle" fill="currentColor" fill-opacity=".55">k3</text>
+  </g>
+  <text x="335" y="122" font-size="10.5" text-anchor="middle" fill="currentColor" fill-opacity=".6">mỗi khối: Conv2d → BatchNorm (đóng băng thống kê) → ELU</text>
+
+  <!-- pooling + fc -->
+  <rect x="0" y="150" width="200" height="58" rx="3" fill="#7FB522" fill-opacity=".12" stroke="#7FB522"/>
+  <text x="100" y="172" font-size="11.5" font-weight="600" text-anchor="middle" fill="currentColor">AdaptiveAvgPool 4 × 6</text>
+  <text x="100" y="190" font-size="10.5" text-anchor="middle" fill="currentColor" fill-opacity=".72">giữ bố cục gần↔xa, trái↔phải</text>
+  <text x="100" y="204" font-size="10.5" text-anchor="middle" fill="#7FB522">64 × 4 × 6 = 1536</text>
+
+  <rect x="230" y="150" width="120" height="58" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".35"/>
+  <text x="290" y="176" font-size="11.5" font-weight="600" text-anchor="middle" fill="currentColor">Linear 1536→64</text>
+  <text x="290" y="194" font-size="10.5" text-anchor="middle" fill="currentColor" fill-opacity=".7">+ ELU</text>
+
+  <!-- nhanh vo huong -->
+  <rect x="0" y="248" width="200" height="58" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".35"/>
+  <text x="100" y="270" font-size="11.5" font-weight="600" text-anchor="middle" fill="currentColor">vector vô hướng x_t</text>
+  <text x="100" y="288" font-size="10.5" text-anchor="middle" fill="currentColor" fill-opacity=".72">tốc độ, giới hạn, one-hot đèn (5)</text>
+
+  <rect x="230" y="248" width="120" height="58" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".35"/>
+  <text x="290" y="274" font-size="11.5" font-weight="600" text-anchor="middle" fill="currentColor">MLP 5→32→32</text>
+  <text x="290" y="292" font-size="10.5" text-anchor="middle" fill="currentColor" fill-opacity=".7">+ ELU</text>
+
+  <!-- concat + trunk -->
+  <rect x="386" y="196" width="104" height="62" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".35"/>
+  <text x="438" y="222" font-size="11.5" font-weight="600" text-anchor="middle" fill="currentColor">nối kênh</text>
+  <text x="438" y="242" font-size="11" text-anchor="middle" fill="currentColor" fill-opacity=".75">64 + 32 = 96</text>
+
+  <rect x="520" y="196" width="120" height="62" rx="3" fill="#7FB522" fill-opacity=".12" stroke="#7FB522"/>
+  <text x="580" y="220" font-size="11.5" font-weight="600" text-anchor="middle" fill="currentColor">trunk_head</text>
+  <text x="580" y="238" font-size="10.5" text-anchor="middle" fill="currentColor" fill-opacity=".72">96→64→32, ELU</text>
+  <text x="580" y="252" font-size="10.5" text-anchor="middle" fill="#7FB522">khớp head.0 / head.3 của IL</text>
+
+  <!-- dau ra -->
+  <g font-size="10.5">
+    <rect x="690" y="46" width="210" height="46" rx="3" fill="#A65BB8" fill-opacity=".12" stroke="#A65BB8"/>
+    <text x="702" y="66" font-weight="600" fill="currentColor">PPO actor</text>
+    <text x="702" y="82" fill="currentColor" fill-opacity=".75">mean_head 32→2 + tanh; log σ tự do</text>
+
+    <rect x="690" y="106" width="210" height="46" rx="3" fill="#A65BB8" fill-opacity=".12" stroke="#A65BB8"/>
+    <text x="702" y="126" font-weight="600" fill="currentColor">PPO critic</text>
+    <text x="702" y="142" fill="currentColor" fill-opacity=".75">value_head 32→1 (mạng độc lập)</text>
+
+    <rect x="690" y="196" width="210" height="46" rx="3" fill="#A65BB8" fill-opacity=".12" stroke="#A65BB8"/>
+    <text x="702" y="216" font-weight="600" fill="currentColor">SAC actor</text>
+    <text x="702" y="232" fill="currentColor" fill-opacity=".75">mean_head + log σ(s) phụ thuộc trạng thái</text>
+
+    <rect x="690" y="256" width="210" height="52" rx="3" fill="#A65BB8" fill-opacity=".12" stroke="#A65BB8"/>
+    <text x="702" y="276" font-weight="600" fill="currentColor">SAC twin critic</text>
+    <text x="702" y="292" fill="currentColor" fill-opacity=".75">[đặc trưng 96 ⊕ a (2)] → 64 → 32 → 1</text>
+    <text x="702" y="304" fill="currentColor" fill-opacity=".6">×2 mạng Q độc lập</text>
+  </g>
+
+  <!-- mui ten -->
+  <g stroke="currentColor" stroke-opacity=".55" fill="none">
+    <line x1="112" y1="72" x2="134" y2="72" marker-end="url(#f5-ar)"/>
+    <line x1="208" y1="72" x2="214" y2="72" marker-end="url(#f5-ar)"/>
+    <line x1="288" y1="72" x2="294" y2="72" marker-end="url(#f5-ar)"/>
+    <line x1="368" y1="72" x2="374" y2="72" marker-end="url(#f5-ar)"/>
+    <line x1="448" y1="72" x2="454" y2="72" marker-end="url(#f5-ar)"/>
+    <path d="M 528 72 L 560 72 L 560 130 L 100 130 L 100 142" marker-end="url(#f5-ar)"/>
+    <line x1="200" y1="179" x2="222" y2="179" marker-end="url(#f5-ar)"/>
+    <line x1="200" y1="277" x2="222" y2="277" marker-end="url(#f5-ar)"/>
+    <path d="M 350 179 L 368 179 L 368 214 L 378 214" marker-end="url(#f5-ar)"/>
+    <path d="M 350 277 L 368 277 L 368 240 L 378 240" marker-end="url(#f5-ar)"/>
+    <line x1="490" y1="227" x2="512" y2="227" marker-end="url(#f5-ar)"/>
+  </g>
+  <g stroke="#A65BB8" fill="none">
+    <path d="M 640 214 L 664 214 L 664 69 L 682 69" marker-end="url(#f5-ap)"/>
+    <path d="M 640 222 L 656 222 L 656 129 L 682 129" marker-end="url(#f5-ap)"/>
+    <path d="M 640 232 L 664 232 L 664 219 L 682 219" marker-end="url(#f5-ap)"/>
+    <path d="M 640 240 L 656 240 L 656 282 L 682 282" marker-end="url(#f5-ap)"/>
+  </g>
+
+  <line x1="0" y1="336" x2="900" y2="336" stroke="currentColor" stroke-opacity=".2"/>
+  <text x="0" y="358" font-size="11" fill="currentColor" fill-opacity=".72">Actor và critic KHÔNG dùng chung trunk: mỗi mạng giữ một bản sao riêng của toàn bộ phần dùng chung.</text>
+  <text x="0" y="376" font-size="11" fill="currentColor" fill-opacity=".72">Nếu chia sẻ, gradient của hàm mất mát giá trị (critic khởi tạo ngẫu nhiên, mất mát ban đầu ~10⁴) sẽ chảy ngược</text>
+  <text x="0" y="394" font-size="11" fill="currentColor" fill-opacity=".72">vào chính các đặc trưng vừa warm-start từ IL và xoá chúng — đúng thứ warm-start sinh ra để bảo vệ.</text>
+</svg>

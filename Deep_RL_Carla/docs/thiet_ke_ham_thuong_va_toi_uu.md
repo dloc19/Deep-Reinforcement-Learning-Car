@@ -1,5 +1,8 @@
 # Thiết kế Hàm phần thưởng và Chiến lược Tối ưu hoá cho Học tăng cường sâu trong Bài toán Bám làn (CARLA)
 
+> ⚠️ **TÀI LIỆU NÀY ĐÃ CŨ.** Bản đầy đủ và cập nhật là [`thiet_ke_thuat_toan_hoc_tang_cuong.md`](thiet_ke_thuat_toan_hoc_tang_cuong.md) — bao trùm toàn bộ nội dung dưới đây cộng với quan sát/hành động/kiến trúc mạng/vòng lặp huấn luyện/đánh giá. Nhiều con số trong tài liệu này (log_std, batch_size, total_steps, off_lane_patience_steps, target_entropy, POOL_GRID, trạng thái thực nghiệm) **không còn khớp mã nguồn**; đừng trích chúng vào báo cáo.
+
+
 > Tài liệu thiết kế (không phải hướng dẫn vận hành — xem `manual_train_drl.md` cho quy trình
 > chạy). Mục tiêu: trình bày **cơ sở lý luận** đằng sau hàm phần thưởng và chiến lược tối ưu
 > hoá (PPO/SAC) dùng trong bước 3/3 của pipeline đồ án, để đưa trực tiếp vào chương

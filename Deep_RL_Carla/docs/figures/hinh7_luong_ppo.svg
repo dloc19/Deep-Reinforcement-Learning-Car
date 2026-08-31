@@ -1,0 +1,77 @@
+<svg viewBox="0 0 900 420" role="img" aria-label="Luồng một chu kỳ cập nhật PPO: thu thập 1024 quyết định, ước lượng advantage bằng GAE, lặp 10 epoch trên minibatch, với hai lớp bảo vệ là cắt tỉ số và dừng sớm theo KL" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="f7-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="f7-ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#A65BB8"/>
+    </marker>
+  </defs>
+
+  <text x="0" y="16" font-size="11" fill="currentColor" fill-opacity=".55" letter-spacing=".06em">MỘT CHU KỲ CẬP NHẬT PPO — LẶP 195 LẦN CHO 200 000 QUYẾT ĐỊNH</text>
+  <line x1="0" y1="24" x2="900" y2="24" stroke="currentColor" stroke-opacity=".25"/>
+
+  <!-- 1 rollout -->
+  <rect x="0" y="48" width="208" height="88" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".35"/>
+  <text x="14" y="70" font-size="11" fill="currentColor" fill-opacity=".55">GIAI ĐOẠN 1</text>
+  <text x="14" y="92" font-size="13" font-weight="600" fill="currentColor">Thu thập rollout</text>
+  <text x="14" y="110" font-size="11" fill="currentColor" fill-opacity=".72">n = 1024 quyết định ≈ 205 s</text>
+  <text x="14" y="126" font-size="11" fill="currentColor" fill-opacity=".72">lưu (o, a thô, log π_cũ, r, V, done)</text>
+
+  <!-- bootstrap -->
+  <rect x="0" y="156" width="208" height="60" rx="3" fill="currentColor" fill-opacity=".04" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="4 3"/>
+  <text x="14" y="176" font-size="11" font-weight="600" fill="currentColor">Nếu bị cắt vì hết giờ</text>
+  <text x="14" y="194" font-size="11" fill="currentColor" fill-opacity=".72">r ← r + γ·V(o′) ngay lúc thu thập</text>
+  <text x="14" y="210" font-size="11" fill="currentColor" fill-opacity=".72">(hết giờ ≠ thất bại)</text>
+
+  <!-- 2 GAE -->
+  <rect x="256" y="48" width="208" height="88" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".35"/>
+  <text x="270" y="70" font-size="11" fill="currentColor" fill-opacity=".55">GIAI ĐOẠN 2</text>
+  <text x="270" y="92" font-size="13" font-weight="600" fill="currentColor">Ước lượng advantage</text>
+  <text x="270" y="110" font-size="11" fill="currentColor" fill-opacity=".72">GAE(λ = 0,95), duyệt ngược</text>
+  <text x="270" y="126" font-size="11" fill="currentColor" fill-opacity=".72">rồi chuẩn hoá theo lô</text>
+
+  <!-- 3 update -->
+  <rect x="512" y="48" width="388" height="168" rx="3" fill="#A65BB8" fill-opacity=".1" stroke="#A65BB8"/>
+  <text x="526" y="70" font-size="11" fill="#A65BB8">GIAI ĐOẠN 3</text>
+  <text x="526" y="92" font-size="13" font-weight="600" fill="currentColor">Cập nhật: 10 epoch × 8 minibatch = 80 bước gradient</text>
+
+  <rect x="526" y="104" width="170" height="46" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".3"/>
+  <text x="536" y="122" font-size="11" font-weight="600" fill="currentColor">Mất mát chính sách</text>
+  <text x="536" y="138" font-size="10.5" fill="currentColor" fill-opacity=".72">surrogate bị cắt, ε = 0,2</text>
+
+  <rect x="712" y="104" width="174" height="46" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".3"/>
+  <text x="722" y="122" font-size="11" font-weight="600" fill="currentColor">Mất mát giá trị</text>
+  <text x="722" y="138" font-size="10.5" fill="currentColor" fill-opacity=".72">cũng bị cắt, hệ số 0,5</text>
+
+  <rect x="526" y="160" width="360" height="44" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".3"/>
+  <text x="536" y="178" font-size="11" font-weight="600" fill="currentColor">Hai optimizer Adam riêng</text>
+  <text x="536" y="194" font-size="10.5" fill="currentColor" fill-opacity=".72">actor 2·10⁻⁵ (bảo vệ IL) · critic 3·10⁻⁴ · cắt gradient theo chuẩn 0,5</text>
+
+  <!-- hai lop bao ve -->
+  <rect x="256" y="252" width="644" height="76" rx="3" fill="currentColor" fill-opacity=".04" stroke="currentColor" stroke-opacity=".3"/>
+  <text x="270" y="272" font-size="11.5" font-weight="600" fill="currentColor">Hai lớp bảo vệ độc lập cho chính sách vừa warm-start</text>
+  <text x="270" y="294" font-size="11" fill="currentColor" fill-opacity=".75">① Cắt tỉ số — chặn mức thay đổi TRONG mỗi bước gradient</text>
+  <text x="270" y="312" font-size="11" fill="currentColor" fill-opacity=".75">② Dừng sớm khi KL trung bình một epoch vượt 1,5 × 0,02 — chặn mức thay đổi TÍCH LUỸ của cả update</text>
+
+  <!-- cong tac critic warmup -->
+  <rect x="0" y="252" width="208" height="76" rx="3" fill="#A65BB8" fill-opacity=".1" stroke="#A65BB8" stroke-dasharray="5 4"/>
+  <text x="14" y="272" font-size="11.5" font-weight="600" fill="currentColor">Cổng hâm nóng critic</text>
+  <text x="14" y="292" font-size="11" fill="currentColor" fill-opacity=".75">10 update đầu: đóng băng</text>
+  <text x="14" y="308" font-size="11" fill="currentColor" fill-opacity=".75">actor, chỉ critic học</text>
+  <text x="14" y="324" font-size="10.5" fill="#A65BB8">→ advantage đáng tin rồi mới cho policy dịch chuyển</text>
+
+  <!-- mui ten -->
+  <line x1="208" y1="92" x2="248" y2="92" stroke="currentColor" stroke-opacity=".6" marker-end="url(#f7-ar)"/>
+  <line x1="464" y1="92" x2="504" y2="92" stroke="currentColor" stroke-opacity=".6" marker-end="url(#f7-ar)"/>
+  <line x1="104" y1="136" x2="104" y2="152" stroke="currentColor" stroke-opacity=".5" marker-end="url(#f7-ar)"/>
+  <line x1="104" y1="216" x2="104" y2="246" stroke="#A65BB8" marker-end="url(#f7-ap)"/>
+  <path d="M 696 216 L 696 232 L 578 232 L 578 248" stroke="currentColor" stroke-opacity=".5" fill="none" marker-end="url(#f7-ar)"/>
+
+  <path d="M 900 132 L 916 132" stroke="none"/>
+  <path d="M 706 216 L 706 356 L 104 356 L 104 340" stroke="#A65BB8" fill="none" stroke-dasharray="6 4" marker-end="url(#f7-ap)"/>
+  <text x="450" y="350" font-size="11" text-anchor="middle" fill="#A65BB8">bỏ toàn bộ rollout, thu thập lại bằng chính sách mới (on-policy)</text>
+
+  <line x1="0" y1="378" x2="900" y2="378" stroke="currentColor" stroke-opacity=".2"/>
+  <text x="0" y="398" font-size="11" fill="currentColor" fill-opacity=".72">Mỗi transition chỉ được dùng cho đúng một chu kỳ rồi bỏ đi — đó là cái giá của on-policy, đổi lại bộ nhớ chỉ 47 MB.</text>
+</svg>
