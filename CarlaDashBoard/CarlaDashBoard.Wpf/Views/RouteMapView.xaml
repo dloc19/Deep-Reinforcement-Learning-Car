@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="CarlaDashBoard.Wpf.Views.RouteMapView"
+<UserControl x:Class="CarlaDashBoard.Wpf.Views.RouteMapView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:CarlaDashBoard.Wpf.ViewModels"
@@ -6,76 +6,171 @@
              d:DataContext="{d:DesignInstance vm:RouteMapViewModel}"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008/design"
              mc:Ignorable="d" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
-    <Grid Margin="20" Background="{StaticResource BgBrush}">
+    <Grid Margin="18" Background="{StaticResource BgBrush}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="260"/>
+            <ColumnDefinition Width="270"/>
         </Grid.ColumnDefinitions>
 
         <!-- ===== Map canvas ===== -->
-        <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="0" Margin="0,0,16,0">
+        <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="0" Margin="0,0,14,0"
+                ClipToBounds="True">
             <Grid>
                 <controls:MapCanvas x:Name="Canvas"
-                                     Graph="{Binding Graph}"
-                                     RoutePolyline="{Binding RoutePolyline}"
-                                     CarPosition="{Binding CarPosition}"
-                                     DestinationPosition="{Binding DestinationPosition}"
-                                     MapClicked="Canvas_MapClicked"/>
-                <TextBlock Text="Chưa có bản đồ — kết nối server rồi bắt đầu phiên."
-                           Style="{StaticResource SoftText}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                           Visibility="{Binding Graph, Converter={StaticResource NullToVisibility}, ConverterParameter=inverse}"
-                           IsHitTestVisible="False"/>
-                <TextBlock Text="Đang tải bản đồ…" Style="{StaticResource SoftText}"
-                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                           Visibility="{Binding IsLoadingGraph, Converter={StaticResource BoolToVis}}"
-                           IsHitTestVisible="False"/>
-                <TextBlock Text="chạm/click lên đường để đặt đích" Style="{StaticResource SoftText}" FontSize="11"
-                           HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12" IsHitTestVisible="False"/>
+                                    Graph="{Binding Graph}"
+                                    RoutePolyline="{Binding RoutePolyline}"
+                                    CarPosition="{Binding CarPosition}"
+                                    DestinationPosition="{Binding DestinationPosition}"
+                                    MapClicked="Canvas_MapClicked"/>
+
+                <!-- No map placeholder -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="{Binding Graph, Converter={StaticResource NullToVisibility}, ConverterParameter=inverse}"
+                            IsHitTestVisible="False">
+                    <TextBlock Text="◎" FontSize="48" HorizontalAlignment="Center"
+                               Foreground="{StaticResource InkFaintBrush}" Margin="0,0,0,12"/>
+                    <TextBlock Text="Chưa có bản đồ"
+                               FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center"
+                               Foreground="{StaticResource InkSoftBrush}"/>
+                    <TextBlock Text="Kết nối server rồi bắt đầu phiên để tải bản đồ"
+                               Style="{StaticResource SoftText}" FontSize="11"
+                               HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                </StackPanel>
+
+                <!-- Loading indicator -->
+                <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                        CornerRadius="8" Padding="16,10"
+                        Background="{StaticResource SurfaceBrush}"
+                        BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"
+                        Visibility="{Binding IsLoadingGraph, Converter={StaticResource BoolToVis}}"
+                        IsHitTestVisible="False">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="⟳" FontSize="16" Foreground="{StaticResource AccentBrush}"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Text="Đang tải bản đồ…" Style="{StaticResource SoftText}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Bottom hint -->
+                <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="14"
+                        CornerRadius="6" Padding="10,5"
+                        Background="#BB0D1117"
+                        BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"
+                        IsHitTestVisible="False">
+                    <TextBlock Text="Click lên đường để đặt điểm đến"
+                               Style="{StaticResource SoftText}" FontSize="11"/>
+                </Border>
             </Grid>
         </Border>
 
         <!-- ===== Right panel ===== -->
         <Border Grid.Column="1" Style="{StaticResource CardBorder}">
             <StackPanel>
-                <TextBlock Text="Chọn điểm đến" Style="{StaticResource HeadingText}"/>
-                <Rectangle Height="1" Fill="{StaticResource BorderBrush2}" Margin="0,10,0,14"/>
 
-                <TextBlock Text="📍 Chọn trên bản đồ" Style="{StaticResource SoftText}" FontSize="11" Margin="0,0,0,10"/>
+                <!-- Section: Điểm đến -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+                    <Border Width="28" Height="28" CornerRadius="6"
+                            Background="{StaticResource AccentSoftBrush}"
+                            BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
+                            Margin="0,0,10,0">
+                        <TextBlock Text="📍" FontSize="13" HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Chọn điểm đến" Style="{StaticResource HeadingText}"/>
+                        <TextBlock Text="Click bản đồ hoặc nhập toạ độ"
+                                   Style="{StaticResource SoftText}" FontSize="10" Margin="0,1,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+                <Rectangle Style="{StaticResource SectionDivider}"/>
 
-                <TextBlock Text="Spawn point" Style="{StaticResource SoftText}" FontSize="11"/>
-                <StackPanel Orientation="Horizontal" Margin="0,4,0,10">
-                    <ComboBox ItemsSource="{Binding SpawnPoints}" SelectedItem="{Binding SelectedSpawnPoint}" Width="150" Margin="0,0,6,0"/>
-                    <Button Content="Chọn" Command="{Binding SetDestinationFromSpawnPointCommand}"/>
+                <!-- Spawn point -->
+                <TextBlock Text="SPAWN POINT" Style="{StaticResource EyebrowText}" Margin="0,0,0,5"/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                    <ComboBox ItemsSource="{Binding SpawnPoints}" SelectedItem="{Binding SelectedSpawnPoint}"
+                              Width="155" Margin="0,0,7,0"/>
+                    <Button Content="Chọn" Command="{Binding SetDestinationFromSpawnPointCommand}"
+                            Padding="12,7"/>
                 </StackPanel>
 
-                <TextBlock Text="Toạ độ x, y" Style="{StaticResource SoftText}" FontSize="11"/>
-                <StackPanel Orientation="Horizontal" Margin="0,4,0,14">
-                    <TextBox Text="{Binding ManualX, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="0,0,6,0"/>
-                    <TextBox Text="{Binding ManualY, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="0,0,6,0"/>
-                    <Button Content="Chọn" Command="{Binding SetDestinationFromCoordinatesCommand}"/>
+                <!-- Manual coordinates -->
+                <TextBlock Text="TOẠ ĐỘ THỦ CÔNG (x, y)" Style="{StaticResource EyebrowText}" Margin="0,0,0,5"/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBox Text="{Binding ManualX, UpdateSourceTrigger=PropertyChanged}"
+                             Width="64" Margin="0,0,6,0"/>
+                    <TextBox Text="{Binding ManualY, UpdateSourceTrigger=PropertyChanged}"
+                             Width="64" Margin="0,0,6,0"/>
+                    <Button Content="Chọn" Command="{Binding SetDestinationFromCoordinatesCommand}"
+                            Padding="12,7"/>
                 </StackPanel>
 
-                <Rectangle Height="1" Fill="{StaticResource BorderBrush2}" Margin="0,0,0,14"/>
+                <!-- Divider -->
+                <Rectangle Fill="{StaticResource BorderBrush2}" Height="1" Margin="0,16,0,14"/>
 
-                <TextBlock Text="Thông tin tuyến" Style="{StaticResource HeadingText}" FontSize="14"/>
-                <StackPanel Visibility="{Binding HasRoute, Converter={StaticResource BoolToVis}}" Margin="0,10,0,0">
-                    <TextBlock FontSize="16" FontWeight="SemiBold">
-                        <Run Text="{Binding RouteDistanceM, StringFormat={}{0:0} m, Mode=OneWay}"/>
-                        <Run Text=" · "/>
-                        <Run Text="{Binding RouteEtaS, StringFormat={}~{0:0}s, Mode=OneWay}"/>
-                    </TextBlock>
-                    <Button Content="▶ Lái bằng DRL theo tuyến" Command="{Binding StartDrivingWithPolicyCommand}"
-                            Style="{StaticResource AccentButton}" Margin="0,14,0,0" HorizontalAlignment="Stretch"/>
-                    <TextBlock Text="policy bám làn, pure-pursuit qua ngã tư (ROUTE_DRL_AUTOPILOT)"
-                               Style="{StaticResource SoftText}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
-                    <Button Content="▶ Lái bằng pure-pursuit" Command="{Binding StartDrivingCommand}"
-                            Margin="0,10,0,0" HorizontalAlignment="Stretch"/>
-                    <TextBlock Text="đối chứng: không dùng model (ASTAR_AUTOPILOT)"
-                               Style="{StaticResource SoftText}" FontSize="11" Margin="0,6,0,0"/>
+                <!-- Section: Route info -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+                    <Border Width="28" Height="28" CornerRadius="6"
+                            Background="#1A3ECDD8"
+                            BorderBrush="{StaticResource RouteBrush}" BorderThickness="1"
+                            Margin="0,0,10,0">
+                        <TextBlock Text="↗" FontSize="15" HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" Foreground="{StaticResource RouteBrush}"/>
+                    </Border>
+                    <TextBlock Text="Thông tin tuyến" Style="{StaticResource HeadingText}"
+                               VerticalAlignment="Center"/>
                 </StackPanel>
 
+                <!-- Route data -->
+                <StackPanel Visibility="{Binding HasRoute, Converter={StaticResource BoolToVis}}" Margin="0,12,0,0">
+                    <Border CornerRadius="8" Background="{StaticResource SurfaceAltBrush}"
+                            Padding="14,10" Margin="0,0,0,14">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <TextBlock Text="📏" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock FontSize="16" FontWeight="Bold">
+                                    <Run Text="{Binding RouteDistanceM, StringFormat={}{0:0} m, Mode=OneWay}"/>
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="⏱" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock FontSize="15" FontWeight="SemiBold"
+                                           Foreground="{StaticResource InkSoftBrush}">
+                                    <Run Text="~"/>
+                                    <Run Text="{Binding RouteEtaS, StringFormat={}{0:0}s, Mode=OneWay}"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- DRL button -->
+                    <Button Command="{Binding StartDrivingWithPolicyCommand}"
+                            Style="{StaticResource AccentButton}"
+                            HorizontalAlignment="Stretch" Padding="12,10" Margin="0,0,0,6">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <TextBlock Text="▶" FontSize="11" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                            <TextBlock Text="Lái bằng DRL" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Button>
+                    <TextBlock Text="Policy bám làn + pure-pursuit qua ngã tư (ROUTE_DRL_AUTOPILOT)"
+                               Style="{StaticResource SoftText}" FontSize="10"
+                               TextWrapping="Wrap" Margin="0,0,0,10"/>
+
+                    <!-- Pure-pursuit button -->
+                    <Button Command="{Binding StartDrivingCommand}"
+                            HorizontalAlignment="Stretch" Padding="12,9" Margin="0,0,0,6">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <TextBlock Text="▷" FontSize="11" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                            <TextBlock Text="Lái pure-pursuit" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <TextBlock Text="Đối chứng: không dùng model (ASTAR_AUTOPILOT)"
+                               Style="{StaticResource SoftText}" FontSize="10" Margin="0,0,0,0"/>
+                </StackPanel>
+
+                <!-- Status message -->
                 <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource SoftText}" FontSize="11"
-                           TextWrapping="Wrap" Margin="0,20,0,0"/>
+                           TextWrapping="Wrap" Margin="0,14,0,0"/>
             </StackPanel>
         </Border>
     </Grid>

@@ -1,16 +1,16 @@
-﻿<Window x:Class="CarlaDashBoard.Wpf.MainWindow"
+<Window x:Class="CarlaDashBoard.Wpf.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Carla Dashboard" Height="760" Width="1200" MinWidth="900" MinHeight="600"
+        Title="Carla Dashboard" Height="760" Width="1200" MinWidth="940" MinHeight="620"
         Icon="{StaticResource AppIcon}"
         WindowStartupLocation="CenterScreen">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="208"/>
+            <ColumnDefinition Width="220"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- ===== Nav rail (design doc §06) ===== -->
+        <!-- ===== Sidebar ===== -->
         <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}"
                 BorderBrush="{StaticResource BorderBrush2}" BorderThickness="0,0,1,0">
             <Grid>
@@ -20,77 +20,139 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- ===== App mark ===== -->
-                <StackPanel Grid.Row="0" Margin="18,20,16,22">
-                    <StackPanel Orientation="Horizontal">
-                        <Image Source="{StaticResource AppIcon}" Width="26" Height="26" Margin="0,0,10,0"/>
-                        <TextBlock Text="CarlaDashBoard" Style="{StaticResource HeadingText}" FontSize="15" VerticalAlignment="Center"/>
+                <!-- ===== Brand / App mark ===== -->
+                <Border Grid.Row="0" Padding="18,20,16,16">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <Border Width="34" Height="34" CornerRadius="8"
+                                    Background="{StaticResource SurfaceAltBrush}"
+                                    BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"
+                                    Margin="0,0,10,0">
+                                <Image Source="{StaticResource AppIcon}" Width="22" Height="22"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="CarlaDash" FontSize="14" FontWeight="Bold"
+                                           Foreground="{StaticResource InkBrush}"/>
+                                <TextBlock Text="BOARD" Style="{StaticResource EyebrowText}"
+                                           Foreground="{StaticResource AccentBrush}" Margin="0,1,0,0"/>
+                            </StackPanel>
+                        </StackPanel>
+                        <Rectangle Height="1" Fill="{StaticResource BorderBrush2}" Opacity="0.5"/>
                     </StackPanel>
-                    <TextBlock Text="Bảng điều khiển CARLA" Style="{StaticResource EyebrowText}" Margin="0,6,0,0"/>
-                </StackPanel>
+                </Border>
 
-                <!-- ===== Nav items ===== -->
-                <StackPanel Grid.Row="1" VerticalAlignment="Top">
+                <!-- ===== Nav section label ===== -->
+                <StackPanel Grid.Row="1" Margin="0,4,0,0">
+                    <TextBlock Text="NAVIGATION" Style="{StaticResource EyebrowText}"
+                               Margin="22,10,0,6"/>
+
+                    <!-- Live Drive -->
                     <Button x:Name="NavLiveDrive" Command="{Binding ShowLiveDriveCommand}"
                             AutomationProperties.AutomationId="NavLiveDrive">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsLiveDriveActive}" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource AccentSoftBrush}"/>
-                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                        <Setter Property="Background"  Value="{StaticResource NavActiveBg}"/>
+                                        <Setter Property="Foreground"  Value="{StaticResource AccentBrush}"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Button.Style>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="▣" FontSize="16" Width="24" VerticalAlignment="Center"/>
-                            <TextBlock Text="Live Drive" VerticalAlignment="Center"/>
-                        </StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <!-- Active accent bar -->
+                            <Rectangle Grid.Column="0" Width="3" Height="20" RadiusX="2" RadiusY="2"
+                                       Fill="{StaticResource AccentBrush}" Margin="0,0,10,0"
+                                       Visibility="{Binding IsLiveDriveActive, Converter={StaticResource BoolToVis}}"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="⬛" FontSize="14" Width="22" VerticalAlignment="Center"
+                                           Margin="0,0,8,0"/>
+                                <TextBlock Text="Live Drive" VerticalAlignment="Center" FontSize="13"/>
+                            </StackPanel>
+                        </Grid>
                     </Button>
+
+                    <!-- Route & Map -->
                     <Button x:Name="NavRouteMap" Command="{Binding ShowRouteMapCommand}"
                             AutomationProperties.AutomationId="NavRouteMap">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsRouteMapActive}" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource AccentSoftBrush}"/>
-                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                        <Setter Property="Background"  Value="{StaticResource NavActiveBg}"/>
+                                        <Setter Property="Foreground"  Value="{StaticResource AccentBrush}"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Button.Style>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="⛯" FontSize="16" Width="24" VerticalAlignment="Center"/>
-                            <TextBlock Text="Route &amp; Map" VerticalAlignment="Center"/>
-                        </StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Rectangle Grid.Column="0" Width="3" Height="20" RadiusX="2" RadiusY="2"
+                                       Fill="{StaticResource AccentBrush}" Margin="0,0,10,0"
+                                       Visibility="{Binding IsRouteMapActive, Converter={StaticResource BoolToVis}}"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="◎" FontSize="14" Width="22" VerticalAlignment="Center"
+                                           Margin="0,0,8,0"/>
+                                <TextBlock Text="Route &amp; Map" VerticalAlignment="Center" FontSize="13"/>
+                            </StackPanel>
+                        </Grid>
                     </Button>
+
+                    <!-- Settings -->
                     <Button x:Name="NavSettings" Command="{Binding ShowSettingsCommand}"
                             AutomationProperties.AutomationId="NavSettings">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsSettingsActive}" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource AccentSoftBrush}"/>
-                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                        <Setter Property="Background"  Value="{StaticResource NavActiveBg}"/>
+                                        <Setter Property="Foreground"  Value="{StaticResource AccentBrush}"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Button.Style>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="⚙" FontSize="16" Width="24" VerticalAlignment="Center"/>
-                            <TextBlock Text="Settings" VerticalAlignment="Center"/>
-                        </StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Rectangle Grid.Column="0" Width="3" Height="20" RadiusX="2" RadiusY="2"
+                                       Fill="{StaticResource AccentBrush}" Margin="0,0,10,0"
+                                       Visibility="{Binding IsSettingsActive, Converter={StaticResource BoolToVis}}"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="⚙" FontSize="14" Width="22" VerticalAlignment="Center"
+                                           Margin="0,0,8,0"/>
+                                <TextBlock Text="Settings" VerticalAlignment="Center" FontSize="13"/>
+                            </StackPanel>
+                        </Grid>
                     </Button>
                 </StackPanel>
 
                 <!-- ===== Connection status footer ===== -->
-                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="18,0,16,18">
-                    <Ellipse Width="9" Height="9" Fill="{Binding ConnectionState, Converter={StaticResource ConnStateToBrush}}"
-                              VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <TextBlock Text="{Binding ConnectionState, Converter={StaticResource ConnStateToText}}"
-                               Style="{StaticResource SoftText}" FontSize="11" VerticalAlignment="Center"/>
-                </StackPanel>
+                <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="0,1,0,0"
+                        Padding="18,12,16,16">
+                    <StackPanel Orientation="Horizontal">
+                        <Grid Width="10" Height="10" VerticalAlignment="Center" Margin="0,0,8,0">
+                            <!-- Glow ring for connected state -->
+                            <Ellipse Width="10" Height="10"
+                                     Fill="{Binding ConnectionState, Converter={StaticResource ConnStateToBrush}}"/>
+                        </Grid>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding ConnectionState, Converter={StaticResource ConnStateToText}}"
+                                       Style="{StaticResource SoftText}" FontSize="11"/>
+                            <TextBlock Text="Bridge Server" Style="{StaticResource EyebrowText}" Margin="0,1,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
 

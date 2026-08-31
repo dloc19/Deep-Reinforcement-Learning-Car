@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="CarlaDashBoard.Wpf.Views.SettingsView"
+<UserControl x:Class="CarlaDashBoard.Wpf.Views.SettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:CarlaDashBoard.Wpf.ViewModels"
@@ -6,64 +6,153 @@
              d:DataContext="{d:DesignInstance vm:SettingsViewModel}"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008/design"
              mc:Ignorable="d" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
-    <ScrollViewer Padding="20" Background="{StaticResource BgBrush}">
-        <StackPanel MaxWidth="900">
+    <ScrollViewer Padding="20,18" Background="{StaticResource BgBrush}"
+                  VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="920">
 
-            <!-- ===== Kết nối Bridge Server ===== -->
-            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+            <!-- ===== Page heading ===== -->
+            <StackPanel Margin="0,0,0,20">
+                <TextBlock Text="Settings" FontSize="22" FontWeight="Bold"
+                           Foreground="{StaticResource InkBrush}"/>
+                <TextBlock Text="Cấu hình kết nối, bản đồ, chế độ vận hành và camera"
+                           Style="{StaticResource SoftText}" FontSize="12" Margin="0,4,0,0"/>
+            </StackPanel>
+
+            <!-- ===== Bridge Server ===== -->
+            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,14">
                 <StackPanel>
-                    <TextBlock Text="Kết nối Bridge Server" Style="{StaticResource HeadingText}"/>
-                    <Rectangle Height="1" Fill="{StaticResource BorderBrush2}" Margin="0,10,0,14"/>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBox Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" Width="200" Margin="0,0,10,0"/>
-                        <TextBox Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}" Width="80" Margin="0,0,10,0"/>
-                        <Button Content="Kết nối" Command="{Binding ConnectCommand}" Style="{StaticResource AccentButton}" Margin="0,0,8,0"/>
-                        <Button Content="Ngắt kết nối" Command="{Binding DisconnectCommand}" Margin="0,0,16,0"/>
-                        <Ellipse Width="10" Height="10" Fill="{Binding ConnectionState, Converter={StaticResource ConnStateToBrush}}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <TextBlock Text="{Binding ConnectionState, Converter={StaticResource ConnStateToText}}" VerticalAlignment="Center" Style="{StaticResource SoftText}"/>
+                    <!-- Card heading -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+                        <Border Width="28" Height="28" CornerRadius="6"
+                                Background="{StaticResource AccentSoftBrush}"
+                                BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
+                                Margin="0,0,10,0">
+                            <TextBlock Text="⇆" FontSize="14" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}"/>
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Kết nối Bridge Server" Style="{StaticResource HeadingText}"/>
+                            <TextBlock Text="WebSocket endpoint của CARLA Python bridge"
+                                       Style="{StaticResource SoftText}" FontSize="10" Margin="0,1,0,0"/>
+                        </StackPanel>
                     </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                        <Button Content="▶ Bắt đầu phiên" Command="{Binding StartSessionCommand}" Margin="0,0,8,0"/>
-                        <Button Content="■ Dừng phiên" Command="{Binding StopSessionCommand}"/>
+                    <Rectangle Style="{StaticResource SectionDivider}"/>
+
+                    <!-- Connection row -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <StackPanel Margin="0,0,8,0">
+                            <TextBlock Text="HOST" Style="{StaticResource EyebrowText}" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}"
+                                     Width="180" FontSize="13"/>
+                        </StackPanel>
+                        <StackPanel Margin="0,0,12,0">
+                            <TextBlock Text="PORT" Style="{StaticResource EyebrowText}" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}"
+                                     Width="80" FontSize="13"/>
+                        </StackPanel>
+                        <StackPanel VerticalAlignment="Bottom" Orientation="Horizontal">
+                            <Button Content="Kết nối" Command="{Binding ConnectCommand}"
+                                    Style="{StaticResource AccentButton}" Margin="0,0,8,0" Padding="14,8"/>
+                            <Button Content="Ngắt" Command="{Binding DisconnectCommand}"
+                                    Margin="0,0,14,0" Padding="14,8"/>
+                            <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                                <Ellipse Width="9" Height="9"
+                                         Fill="{Binding ConnectionState, Converter={StaticResource ConnStateToBrush}}"
+                                         VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="{Binding ConnectionState, Converter={StaticResource ConnStateToText}}"
+                                           VerticalAlignment="Center" Style="{StaticResource SoftText}" FontSize="12"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Session row -->
+                    <StackPanel Orientation="Horizontal">
+                        <Button Padding="14,8" Margin="0,0,8,0" Command="{Binding StartSessionCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="▶" Foreground="{StaticResource GoodBrush}"
+                                           FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="Bắt đầu phiên" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Padding="14,8" Command="{Binding StopSessionCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="■" Foreground="{StaticResource CritBrush}"
+                                           FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="Dừng phiên" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
                 </StackPanel>
             </Border>
 
             <!-- ===== Bản đồ & thời tiết ===== -->
-            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,14">
                 <StackPanel>
-                    <TextBlock Text="Bản đồ &amp; thời tiết" Style="{StaticResource HeadingText}"/>
-                    <Rectangle Height="1" Fill="{StaticResource BorderBrush2}" Margin="0,10,0,14"/>
                     <StackPanel Orientation="Horizontal">
-                        <StackPanel Margin="0,0,20,0">
-                            <TextBlock Text="Town" Style="{StaticResource SoftText}" FontSize="11" Margin="0,0,0,4"/>
+                        <Border Width="28" Height="28" CornerRadius="6"
+                                Background="#1A3ECDD8"
+                                BorderBrush="{StaticResource RouteBrush}" BorderThickness="1"
+                                Margin="0,0,10,0">
+                            <TextBlock Text="◎" FontSize="13" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" Foreground="{StaticResource RouteBrush}"/>
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Bản đồ &amp; Thời tiết" Style="{StaticResource HeadingText}"/>
+                            <TextBlock Text="Chọn Town và điều kiện môi trường CARLA"
+                                       Style="{StaticResource SoftText}" FontSize="10" Margin="0,1,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <Rectangle Style="{StaticResource SectionDivider}"/>
+
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel Margin="0,0,24,0">
+                            <TextBlock Text="TOWN / MAP" Style="{StaticResource EyebrowText}" Margin="0,0,0,5"/>
                             <StackPanel Orientation="Horizontal">
-                                <ComboBox ItemsSource="{Binding Towns}" SelectedItem="{Binding SelectedTown}" Width="150" Margin="0,0,8,0"/>
-                                <Button Content="Áp dụng" Command="{Binding ApplyTownCommand}"/>
+                                <ComboBox ItemsSource="{Binding Towns}" SelectedItem="{Binding SelectedTown}"
+                                          Width="150" Margin="0,0,8,0"/>
+                                <Button Content="Áp dụng" Command="{Binding ApplyTownCommand}" Padding="12,7"/>
                             </StackPanel>
                         </StackPanel>
                         <StackPanel>
-                            <TextBlock Text="Thời tiết" Style="{StaticResource SoftText}" FontSize="11" Margin="0,0,0,4"/>
+                            <TextBlock Text="THỜI TIẾT" Style="{StaticResource EyebrowText}" Margin="0,0,0,5"/>
                             <StackPanel Orientation="Horizontal">
-                                <ComboBox ItemsSource="{Binding WeatherPresets}" SelectedItem="{Binding SelectedWeatherPreset}"
-                                          DisplayMemberPath="Name" Width="180" Margin="0,0,8,0"/>
-                                <Button Content="Áp dụng" Command="{Binding ApplyWeatherCommand}"/>
+                                <ComboBox ItemsSource="{Binding WeatherPresets}"
+                                          SelectedItem="{Binding SelectedWeatherPreset}"
+                                          DisplayMemberPath="Name" Width="190" Margin="0,0,8,0"/>
+                                <Button Content="Áp dụng" Command="{Binding ApplyWeatherCommand}" Padding="12,7"/>
                             </StackPanel>
                         </StackPanel>
                     </StackPanel>
-                    <TextBlock Margin="0,12,0,0" Style="{StaticResource SoftText}" FontSize="11">
-                        <Run Text="Xe: "/><Run Text="{Binding VehicleFilter, Mode=OneWay}"/>
-                        <Run Text="  ·  Spawn points: "/><Run Text="{Binding SpawnPointCount, Mode=OneWay}"/>
-                    </TextBlock>
+
+                    <Border CornerRadius="6" Background="{StaticResource SurfaceAltBrush}"
+                            Padding="10,7" Margin="0,12,0,0">
+                        <TextBlock Style="{StaticResource SoftText}" FontSize="11">
+                            <Run Text="🚗  Xe: "/><Run Text="{Binding VehicleFilter, Mode=OneWay}"/>
+                            <Run Text="   ·   "/>
+                            <Run Text="📍  Spawn points: "/><Run Text="{Binding SpawnPointCount, Mode=OneWay}"/>
+                        </TextBlock>
+                    </Border>
                 </StackPanel>
             </Border>
 
             <!-- ===== Chế độ vận hành ===== -->
-            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,14">
                 <StackPanel>
-                    <TextBlock Text="Chế độ vận hành" Style="{StaticResource HeadingText}"/>
-                    <TextBlock Text="chỉ một mode chạy tại một thời điểm — đổi mode sẽ dừng phiên hiện tại"
-                               Style="{StaticResource SoftText}" FontSize="11" Margin="0,4,0,14"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Border Width="28" Height="28" CornerRadius="6"
+                                Background="#1A3FB950"
+                                BorderBrush="{StaticResource GoodBrush}" BorderThickness="1"
+                                Margin="0,0,10,0">
+                            <TextBlock Text="⚡" FontSize="13" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" Foreground="{StaticResource GoodBrush}"/>
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Chế độ vận hành" Style="{StaticResource HeadingText}"/>
+                            <TextBlock Text="Chỉ một mode chạy tại một thời điểm — đổi mode sẽ dừng phiên hiện tại"
+                                       Style="{StaticResource SoftText}" FontSize="10" Margin="0,1,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <Rectangle Style="{StaticResource SectionDivider}"/>
 
                     <ListBox ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}"
                              Background="Transparent" BorderThickness="0"
@@ -78,14 +167,37 @@
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="ListBoxItem">
-                                            <Border x:Name="Tile" BorderThickness="1.5" CornerRadius="6" Margin="4"
-                                                    Padding="12" MinHeight="90" Width="210" Background="{StaticResource SurfaceAltBrush}"
+                                            <Border x:Name="Tile" BorderThickness="1.5" CornerRadius="8"
+                                                    Margin="0,0,10,10" Padding="14,12" MinHeight="100" Width="215"
+                                                    Background="{StaticResource SurfaceAltBrush}"
                                                     BorderBrush="{StaticResource BorderBrush2}">
-                                                <ContentPresenter/>
+                                                <Grid>
+                                                    <!-- Selected checkmark -->
+                                                    <Border x:Name="CheckBadge"
+                                                            Width="18" Height="18" CornerRadius="9"
+                                                            Background="{StaticResource AccentBrush}"
+                                                            HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                            Margin="0,-4,-4,0" Visibility="Collapsed">
+                                                        <TextBlock Text="✓" FontSize="10" FontWeight="Bold"
+                                                                   Foreground="#100C00"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ContentPresenter/>
+                                                </Grid>
                                             </Border>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsSelected" Value="True">
-                                                    <Setter TargetName="Tile" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                                    <Setter TargetName="Tile" Property="BorderBrush"
+                                                            Value="{StaticResource AccentBrush}"/>
+                                                    <Setter TargetName="Tile" Property="Background"
+                                                            Value="{StaticResource NavActiveBg}"/>
+                                                    <Setter TargetName="CheckBadge" Property="Visibility"
+                                                            Value="Visible"/>
+                                                </Trigger>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Tile" Property="BorderBrush"
+                                                            Value="{StaticResource InkSoftBrush}"/>
                                                 </Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>
@@ -96,52 +208,87 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate DataType="{x:Type models:ModeOption}">
                                 <StackPanel Cursor="Hand">
-                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"/>
-                                    <TextBlock Text="{Binding Description}" Style="{StaticResource SoftText}" FontSize="11"
-                                               TextWrapping="Wrap" Margin="0,6,0,8"/>
-                                    <TextBlock Text="Phase sau" Foreground="{StaticResource AccentBrush}" FontSize="10"
-                                               Visibility="{Binding Implemented, Converter={StaticResource BoolToVis}, ConverterParameter=inverse}"/>
+                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                                               FontSize="13" Margin="0,0,0,5"/>
+                                    <TextBlock Text="{Binding Description}" Style="{StaticResource SoftText}"
+                                               FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                    <Border CornerRadius="3" Padding="5,2" HorizontalAlignment="Left"
+                                            Visibility="{Binding Implemented, Converter={StaticResource BoolToVis}, ConverterParameter=inverse}"
+                                            Background="{StaticResource AccentSoftBrush}"
+                                            BorderBrush="{StaticResource AccentBrush}" BorderThickness="1">
+                                        <TextBlock Text="Phase sau" Foreground="{StaticResource AccentBrush}"
+                                                   FontSize="9" FontWeight="SemiBold"/>
+                                    </Border>
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
 
-                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                        <TextBlock Text="Đã chọn: " Style="{StaticResource SoftText}" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding SelectedMode.DisplayName}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,16,0"/>
-                        <Button Content="Áp dụng mode" Command="{Binding ApplyModeCommand}" Style="{StaticResource AccentButton}"/>
-                    </StackPanel>
+                    <Border CornerRadius="6" Background="{StaticResource SurfaceAltBrush}"
+                            Padding="12,9" Margin="0,4,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Đã chọn: " Style="{StaticResource SoftText}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding SelectedMode.DisplayName}" FontWeight="SemiBold"
+                                       VerticalAlignment="Center" Margin="4,0,0,0"
+                                       Foreground="{StaticResource AccentBrush}"/>
+                            <Button Content="Áp dụng mode" Command="{Binding ApplyModeCommand}"
+                                    Style="{StaticResource AccentButton}" Margin="16,0,0,0" Padding="14,7"/>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </Border>
 
             <!-- ===== Camera ===== -->
-            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,14">
                 <StackPanel>
-                    <TextBlock Text="Camera" Style="{StaticResource HeadingText}"/>
-                    <Rectangle Height="1" Fill="{StaticResource BorderBrush2}" Margin="0,10,0,14"/>
                     <StackPanel Orientation="Horizontal">
-                        <StackPanel Margin="0,0,16,0">
-                            <TextBlock Text="Rộng" Style="{StaticResource SoftText}" FontSize="11"/>
-                            <TextBox Text="{Binding CameraWidth}" Width="70"/>
+                        <Border Width="28" Height="28" CornerRadius="6"
+                                Background="#1AF85149"
+                                BorderBrush="{StaticResource CritBrush}" BorderThickness="1"
+                                Margin="0,0,10,0">
+                            <TextBlock Text="◉" FontSize="13" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" Foreground="{StaticResource CritBrush}"/>
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Camera" Style="{StaticResource HeadingText}"/>
+                            <TextBlock Text="Độ phân giải, FOV và tốc độ phát khung hình"
+                                       Style="{StaticResource SoftText}" FontSize="10" Margin="0,1,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <Rectangle Style="{StaticResource SectionDivider}"/>
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel Margin="0,0,14,0">
+                            <TextBlock Text="RỘNG (px)" Style="{StaticResource EyebrowText}" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding CameraWidth}" Width="80"/>
+                        </StackPanel>
+                        <StackPanel Margin="0,0,14,0">
+                            <TextBlock Text="CAO (px)" Style="{StaticResource EyebrowText}" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding CameraHeight}" Width="80"/>
+                        </StackPanel>
+                        <StackPanel Margin="0,0,14,0">
+                            <TextBlock Text="FOV (°)" Style="{StaticResource EyebrowText}" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding CameraFov}" Width="70"/>
                         </StackPanel>
                         <StackPanel Margin="0,0,16,0">
-                            <TextBlock Text="Cao" Style="{StaticResource SoftText}" FontSize="11"/>
-                            <TextBox Text="{Binding CameraHeight}" Width="70"/>
+                            <TextBlock Text="FPS PHÁT" Style="{StaticResource EyebrowText}" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding CameraFps}" Width="70"/>
                         </StackPanel>
-                        <StackPanel Margin="0,0,16,0">
-                            <TextBlock Text="FOV" Style="{StaticResource SoftText}" FontSize="11"/>
-                            <TextBox Text="{Binding CameraFov}" Width="60"/>
+                        <StackPanel VerticalAlignment="Bottom">
+                            <Button Content="Áp dụng" Command="{Binding ApplyCameraCommand}" Padding="14,8"/>
                         </StackPanel>
-                        <StackPanel Margin="0,0,16,0">
-                            <TextBlock Text="FPS phát" Style="{StaticResource SoftText}" FontSize="11"/>
-                            <TextBox Text="{Binding CameraFps}" Width="60"/>
-                        </StackPanel>
-                        <Button Content="Áp dụng" Command="{Binding ApplyCameraCommand}" VerticalAlignment="Bottom"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
 
-            <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource SoftText}" TextWrapping="Wrap" Margin="0,0,0,20"/>
+            <!-- Status message -->
+            <Border CornerRadius="7" Background="{StaticResource SurfaceAltBrush}"
+                    BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"
+                    Padding="12,8" Margin="0,0,0,20"
+                    Visibility="{Binding StatusMessage, Converter={StaticResource NullToVisibility}}">
+                <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource SoftText}"
+                           TextWrapping="Wrap" FontSize="12"/>
+            </Border>
+
         </StackPanel>
     </ScrollViewer>
 </UserControl>
