@@ -87,6 +87,7 @@ outputs/
 !Deep_RL_Carla/drl_training_sac/compare_episodes.csv
 !Deep_RL_Carla/drl_training_sac/compare_updates.csv
 !Deep_RL_Carla/drl_training_sac/compare_eval.csv
+!Deep_RL_Carla/drl_training_sac/compare_all.csv
 
 # Ảnh & video thu thập từ CARLA
 *.png
