@@ -228,6 +228,71 @@
                     </StackPanel>
                 </Border>
 
+                <!-- ===== Lenh dieu khien =====
+                     `Telemetry.Steer/Throttle/Brake` da co trong model va duoc bridge gui moi
+                     tick nhung truoc day KHONG hien o dau ca — trong khi day dung la thu can
+                     nhin nhat luc quay demo: policy dang ra lenh gi. Hien khi co xe, bat ke
+                     mode nao, nen cot phai khong con trong o mode IDLE/autopilot. -->
+                <StackPanel Visibility="{Binding Telemetry.EgoAlive, Converter={StaticResource BoolToVis}}"
+                            Margin="0,0,0,14">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,9">
+                        <TextBlock Text="🎛" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="Lệnh điều khiển" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Lai: thang -1..1, nen NUA thanh = di thang. Vach giua danh dau moc 0. -->
+                    <Grid Margin="0,0,0,10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Grid.Row="0" Margin="0,0,0,4">
+                            <TextBlock DockPanel.Dock="Right" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource InkBrush}"
+                                       Text="{Binding Telemetry.Steer, StringFormat={}{0:+0.00;-0.00; 0.00}, Mode=OneWay}"/>
+                            <TextBlock Text="Lái" Style="{StaticResource MetricLabel}"/>
+                        </DockPanel>
+                        <Grid Grid.Row="1">
+                            <ProgressBar Style="{StaticResource MeterBar}" Minimum="-1" Maximum="1"
+                                         Value="{Binding Telemetry.Steer, Mode=OneWay}"/>
+                            <Rectangle Width="1" Height="6" Fill="{StaticResource BorderBrush2}"
+                                       HorizontalAlignment="Center"/>
+                        </Grid>
+                    </Grid>
+
+                    <Grid Margin="0,0,0,10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Grid.Row="0" Margin="0,0,0,4">
+                            <TextBlock DockPanel.Dock="Right" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource GoodBrush}"
+                                       Text="{Binding Telemetry.Throttle, StringFormat={}{0:0.00}, Mode=OneWay}"/>
+                            <TextBlock Text="Ga" Style="{StaticResource MetricLabel}"/>
+                        </DockPanel>
+                        <ProgressBar Grid.Row="1" Style="{StaticResource MeterBar}"
+                                     Foreground="{StaticResource GoodBrush}"
+                                     Value="{Binding Telemetry.Throttle, Mode=OneWay}"/>
+                    </Grid>
+
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Grid.Row="0" Margin="0,0,0,4">
+                            <TextBlock DockPanel.Dock="Right" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource CritBrush}"
+                                       Text="{Binding Telemetry.Brake, StringFormat={}{0:0.00}, Mode=OneWay}"/>
+                            <TextBlock Text="Phanh" Style="{StaticResource MetricLabel}"/>
+                        </DockPanel>
+                        <ProgressBar Grid.Row="1" Style="{StaticResource MeterBar}"
+                                     Foreground="{StaticResource CritBrush}"
+                                     Value="{Binding Telemetry.Brake, Mode=OneWay}"/>
+                    </Grid>
+                </StackPanel>
+
                 <!-- Data collection section -->
                 <StackPanel Visibility="{Binding IsDataCollectionMode, Converter={StaticResource BoolToVis}}">
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
