@@ -89,6 +89,13 @@ outputs/
 !Deep_RL_Carla/drl_training_sac/compare_eval.csv
 !Deep_RL_Carla/drl_training_sac/compare_all.csv
 
+# Ba file cua RIENG PPO (sinh boi drl_training/build_ppo_log.py) cung GIU LAI, ly do y het:
+# chung la ket qua da gop tu 5 lan train + 11 lo danh gia, tong ~590 KB, va sinh lai doi hoi
+# chay lai ca chuc gio train. Tach khoi bo compare_* vi bieu do PPO va SAC ve rieng nhau.
+!Deep_RL_Carla/drl_training/ppo_all.csv
+!Deep_RL_Carla/drl_training/ppo_eval.csv
+!Deep_RL_Carla/drl_training/ppo_eval_episodes.csv
+
 # Ảnh & video thu thập từ CARLA
 *.png
 *.jpg
