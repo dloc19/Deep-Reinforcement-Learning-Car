@@ -323,7 +323,21 @@ class CarlaLaneKeepEnv(object):
             vehicle_bp.set_attribute("role_name", "drl_ego")
 
         spawn_points = list(self.spawn_points)
-        self._rng.shuffle(spawn_points)
+        # `fixed_spawn_index` (mac dinh None = giu nguyen hanh vi cu: xao ngau nhien) cho
+        # phep ep xe xuat phat tai DUNG mot spawn point. Can cho `evaluate_route.py`: de so
+        # sanh "policy don" voi "policy + A*" mot cach cong bang thi hai lan chay phai di
+        # CUNG mot tuyen, ma tuyen bat dau tu diem xuat phat. Neu de ngau nhien, chenh lech
+        # do duoc se lan voi chenh lech do tuyen de/kho khac nhau.
+        #
+        # Van giu ca danh sach lam du phong (chi day diem duoc chon len dau) chu khong chi
+        # thu mot diem duy nhat: spawn point co the dang bi xe khac chiem, va khi do that bai
+        # cung nen roi ve diem khac hon la hong ca lo danh gia.
+        fixed = self.cfg.get("fixed_spawn_index")
+        if fixed is None:
+            self._rng.shuffle(spawn_points)
+        else:
+            idx = int(fixed) % len(spawn_points)
+            spawn_points = [spawn_points[idx]] + spawn_points[:idx] + spawn_points[idx + 1:]
         vehicle = None
         for transform in spawn_points:
             vehicle = self.world.try_spawn_actor(vehicle_bp, transform)
