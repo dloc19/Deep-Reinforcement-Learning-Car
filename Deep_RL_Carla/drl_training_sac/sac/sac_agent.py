@@ -255,8 +255,18 @@ class SACAgent(object):
             "updates_done": self.updates_done,
         }
 
-    def load_state_dict(self, state):
+    def load_state_dict(self, state, actor_only=False):
+        """`actor_only=True`: chi nap actor, bo qua critic va cac optimizer.
+
+        Danh gia (`evaluate.py`) chi goi `select_action` -> chi dung actor; critic khong
+        tham gia mot phep tinh nao. Nen mot checkpoint train truoc khi kien truc `QNetwork`
+        doi (vd truoc khi them `action_emb`) VAN danh gia duoc dung, du `critic` trong do
+        khong con khop shape. Mac dinh van la False: luc TRAIN thi critic lech shape la loi
+        that su, im lang bo qua se lam agent hoc lai tu critic ngau nhien ma khong ai biet.
+        """
         self.actor.load_state_dict(state["actor"])
+        if actor_only:
+            return
         self.critic.load_state_dict(state["critic"])
         if "critic_target" in state:
             self.critic_target.load_state_dict(state["critic_target"])

@@ -90,7 +90,13 @@ def main():
     config["town_rotate_episodes"] = 10 ** 9
 
     agent = build_agent(algorithm, contract, config, device)
-    agent.load_state_dict(checkpoint)
+    # Danh gia chi goi `select_action` -> chi can actor. Nap "actor_only" de mot checkpoint
+    # train truoc khi kien truc critic doi van danh gia duoc: critic khong tham gia phep
+    # tinh nao o day, nen tu choi nap no chi lam mat kha nang so sanh cac lan train cu.
+    if algorithm == "sac":
+        agent.load_state_dict(checkpoint, actor_only=True)
+    else:
+        agent.load_state_dict(checkpoint)
     agent.actor.eval()
     agent.critic.eval()
 

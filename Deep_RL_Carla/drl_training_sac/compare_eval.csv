@@ -1,0 +1,12 @@
+thuat_toan,ban_do,n,va_cham_pct,lech_lan_m,dai_buoc,ghi_chu
+IL,Town01,10,70.0,0.13843907631455096,287.8,behavior cloning (khoi tao)
+IL,Town04,10,20.0,0.0982033708055339,446.8,behavior cloning (khoi tao)
+IL,Town05,10,40.0,0.18896996423290263,375.7,behavior cloning (khoi tao)
+PPO,Town01,30,0.0,0.12898755915551677,500.0,ppo_v4 (mo hinh trien khai)
+PPO,Town03,30,16.666666666666668,0.3751927952631566,233.4,ppo_v4 (mo hinh trien khai)
+PPO,Town04,30,33.333333333333336,0.09945426152194221,383.93333333333334,ppo_v4 (mo hinh trien khai)
+PPO,Town05,30,13.333333333333334,0.14841172992915394,445.56666666666666,ppo_v4 (mo hinh trien khai)
+SAC,Town01,30,83.33333333333333,0.14517063774268044,246.9,"sac_b, bc_coef 1.0 (SAC tot nhat)"
+SAC,Town03,30,43.333333333333336,0.1869796619325507,310.7,"sac_b, bc_coef 1.0 (SAC tot nhat)"
+SAC,Town04,30,36.666666666666664,0.08078501665364189,410.6666666666667,"sac_b, bc_coef 1.0 (SAC tot nhat)"
+SAC,Town05,30,43.333333333333336,0.19148080571426046,331.2,"sac_b, bc_coef 1.0 (SAC tot nhat)"
