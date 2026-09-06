@@ -296,10 +296,16 @@ class SimLoop:
             self.cfg.il_checkpoint_path, "behavior_cloning/best_il_model.pth")
         algo = self.cfg.drl_algorithm
         drl_checkpoint_path = self._resolve_checkpoint_path(
-            self.cfg.drl_checkpoint_path, "drl_training/runs/%s_lane_keep/%s_latest.pt" % (algo, algo))
+            self.cfg.drl_checkpoint_path, "drl_training/runs/best/%s_latest.pt" % algo)
         cache_key = (algo, il_checkpoint_path, drl_checkpoint_path)
         if self._drl_predictor_cache is None or self._drl_predictor_cache[0] != cache_key:
             logger.info("Dang nap DRL checkpoint (%s): %s", algo, drl_checkpoint_path)
+            # In ky lai chinh checkpoint dang nap. Mot checkpoint SAI khong bao loi gi —
+            # shape khop, xe van chay, chi la chay bang mot policy khac voi y dinh. Truong
+            # `update` la chot chan re nhat: neu no nho hon `critic_warmup_updates` cua lan
+            # train do thi actor con dang bi dong bang, tuc trong so van la IL nguyen ban.
+            for line in il_drl_bridge.describe_checkpoint(drl_checkpoint_path):
+                logger.info("  %s", line)
             contract, resolved_algo, predict = il_drl_bridge.build_drl_predictor(
                 ns, algo, il_checkpoint_path, drl_checkpoint_path, self.cfg.learned_autopilot_device)
             if resolved_algo != algo:

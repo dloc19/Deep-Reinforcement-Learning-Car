@@ -59,7 +59,17 @@ class BridgeConfig:
 
     # --- IL / DRL Autopilot (Phase 4 — wraps Deep_RL_Carla/drl_training) ---
     il_checkpoint_path: str = ""      # "" = {deep_rl_carla_root}/behavior_cloning/best_il_model.pth
-    drl_checkpoint_path: str = ""     # "" = {deep_rl_carla_root}/drl_training/runs/{algo}_lane_keep/{algo}_latest.pt
+    # "" = {deep_rl_carla_root}/drl_training/runs/best/{algo}_latest.pt
+    #
+    # `runs/best/` la CON TRO on dinh toi checkpoint duoc chon de trien khai, kem
+    # `README.txt` ghi ro no den tu lan chay nao va so lieu eval nao dan toi lua chon do.
+    # Truoc day mac dinh tro toi `runs/{algo}_lane_keep/` — mot ten thu muc do train_ppo.py
+    # tao ra theo cau hinh, nen no tro vao BAT KY lan chay nao tinh co dung ten day. Tren
+    # may nay do la mot lan chay 5 update, ma o update 5 actor VAN DANG BI DONG BANG (giai
+    # doan critic-warmup) — tuc trong so actor giong het IL nguyen ban. Ca hai che do
+    # DRL_AUTOPILOT lan ROUTE_DRL_AUTOPILOT vi vay da chay THUAN IL ma khong co dau hieu gi
+    # bao ra ngoai. Xem log "DRL checkpoint" khi khoi dong de doi chieu.
+    drl_checkpoint_path: str = ""
     drl_algorithm: str = "ppo"        # "ppo" | "sac" — overridden if the checkpoint itself says otherwise
     learned_autopilot_device: str = "cuda"   # falls back to "cpu" automatically if CUDA isn't available
 
