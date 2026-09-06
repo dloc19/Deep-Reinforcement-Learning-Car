@@ -74,7 +74,27 @@ class CarlaLaneKeepEnv(object):
         self.contract = observation_contract
         self.client = carla.Client(config["host"], config.get("port", 2000))
         self.client.set_timeout(config.get("timeout", 20.0))
-        self._load_town(config.get("town"))
+
+        # `town` nhan MOT ten hoac MOT DANH SACH ten. Danh sach = xoay vong ban do trong
+        # luc train, doi ban do sau moi `town_rotate_episodes` episode.
+        #
+        # Vi sao can: checkpoint IL (behavior_cloning/best_il_model.pth) ghi
+        # `train_towns = ['Town01','Town02','Town03','Town04']` — no da hoc tren BON ban do.
+        # Fine-tune PPO chi tren MOT ban do lam policy quen ba ban do kia: do duoc tren
+        # runs/ppo_v3, lech lan tren Town01 di tu 0.138 m (IL) len 0.382 m (PPO) sau 250
+        # update chi chay Town04, trong khi tren chinh Town04 thi PPO tot len. Day la quen
+        # tham hoa (catastrophic forgetting) kinh dien, khong phai loi thuat toan.
+        towns = config.get("town")
+        if isinstance(towns, (list, tuple)):
+            self.town_list = [t for t in towns if t]
+        elif towns:
+            self.town_list = [towns]
+        else:
+            self.town_list = []
+        self.town_rotate_episodes = int(config.get("town_rotate_episodes", 25))
+        self._town_index = 0
+        self._episodes_on_town = 0
+        self._load_town(self.town_list[0] if self.town_list else None)
         self.world = self.client.get_world()
         self.map = self.world.get_map()
         self._apply_synchronous_mode()
@@ -124,8 +144,17 @@ class CarlaLaneKeepEnv(object):
         # cho mot tick ma khong con client nao goi. Tra ve async truoc da.
         settings = world.get_settings()
         if settings.synchronous_mode:
-            print("[!] The gioi dang ket o synchronous mode (lan chay truoc chua don sach) "
-                  "— tra ve async truoc khi nap ban do.")
+            # Hai truong hop rat khac nhau cung roi vao day, dung mot thong bao cho ca hai
+            # thi doc log se hieu nham: (a) XOAY BAN DO giua lan train — sync mode la cua
+            # CHINH ta, hoan toan binh thuong, va `_rebind_world()` se bat lai ngay sau khi
+            # nap xong; (b) lan chay TRUOC bi Ctrl+C/crash truoc khi close() kip khoi phuc —
+            # luc do khong con client nao tick va load_world() se treo vinh vien neu khong
+            # tra ve async. `self.vehicle` con song = ta dang lai = truong hop (a).
+            if getattr(self, "vehicle", None) is not None or getattr(self, "_town_index", 0) or self.town_list[1:]:
+                print("Tra the gioi ve async de nap ban do (sync mode dang do lan train nay giu).")
+            else:
+                print("[!] The gioi dang ket o synchronous mode (lan chay truoc chua don sach) "
+                      "— tra ve async truoc khi nap ban do.")
             settings.synchronous_mode = False
             settings.fixed_delta_seconds = None
             world.apply_settings(settings)
@@ -144,6 +173,47 @@ class CarlaLaneKeepEnv(object):
             self.client.load_world(town)
         finally:
             self.client.set_timeout(control_timeout)
+
+    def _rebind_world(self):
+        """Doc lai moi tham chieu phu thuoc world sau khi `load_world()` thay the no.
+
+        `client.load_world()` dung LEN mot world moi — moi handle cu (world, map,
+        spectator, spawn point) tro toi world da chet. Quen mot cai la loi im lang:
+        vd `self.map` cu van tra ve waypoint cua ban do truoc, nen `lane_offset_m` duoc
+        tinh tren mot ban do khac han ban do xe dang chay.
+        """
+        self.world = self.client.get_world()
+        self.map = self.world.get_map()
+        self._apply_synchronous_mode()
+        self.spectator = (self.world.get_spectator()
+                          if self.cfg.get("spectator_follow", False) else None)
+        self.spawn_points = self.map.get_spawn_points()
+        if not self.spawn_points:
+            raise RuntimeError("Map %s khong co spawn point nao." % self.map.name)
+        self._next_tick_wall = None
+
+    def _maybe_rotate_town(self):
+        """Doi sang ban do ke tiep khi da chay du `town_rotate_episodes` episode.
+
+        Xoay theo EPISODE chu khong theo tick: `load_world()` mat hang phut, nen doi qua
+        day thi phan lon thoi gian la nap ban do. 25 episode ~ 8-10 phut lai xe cho mot
+        lan nap ~2 phut.
+        """
+        if len(self.town_list) < 2:
+            return None
+        if self._episodes_on_town < self.town_rotate_episodes:
+            return None
+        self._town_index = (self._town_index + 1) % len(self.town_list)
+        self._episodes_on_town = 0
+        target = self.town_list[self._town_index]
+        self._load_town(target)
+        self._rebind_world()
+        return target
+
+    @property
+    def current_town(self):
+        name = self.map.name.replace("\\", "/").split("/")[-1]
+        return name
 
     def _tick(self):
         """Mot tick vat ly, kem hai thu chi phuc vu NGUOI XEM.
@@ -315,7 +385,19 @@ class CarlaLaneKeepEnv(object):
     # ------------------------------------------------------------------------- Gym API
     def reset(self):
         self._destroy_actors()
+        rotated = self._maybe_rotate_town()
+        if rotated:
+            print("Doi ban do -> %s (sau %d episode)" % (rotated, self.town_rotate_episodes))
+        self._episodes_on_town += 1
         self._spawn_actors()
+        # Thong ke lech lan cua episode — de train_ppo.py/train_sac.py ghi vao episode_log.csv.
+        # Truoc day chi `evaluate.py` do dai luong nay, nen mot lan train nham vao viec cai
+        # thien bam lan (vd tang w_lane_offset) khong the theo doi duoc gi cho toi tan buoc
+        # eval cuoi cung. Tach rieng "tren duong thuong" vi trong nga tu `lane_offset_m` la
+        # phep do rac (xem _compute_reward).
+        self._ep_offsets = []
+        self._ep_offsets_road = []
+        self._ep_junction_steps = 0
         self.previous_steer = 0.0
         self.previous_longitudinal = 0.0
         self.previous_collisions = 0
@@ -357,10 +439,30 @@ class CarlaLaneKeepEnv(object):
         reward, terminated, info = self._compute_reward(state, steer, longitudinal)
         truncated = self.step_count >= self.cfg.get("max_episode_steps", 1000)
 
+        offset = abs(state["lane_offset_m"])
+        self._ep_offsets.append(offset)
+        if state.get("is_junction"):
+            self._ep_junction_steps += 1
+        else:
+            self._ep_offsets_road.append(offset)
+
         self.previous_steer = steer
         self.previous_longitudinal = longitudinal
         info["state"] = state
+        if terminated or truncated:
+            info["episode_stats"] = self.episode_stats()
         return self._make_observation(state), reward, terminated, truncated, info
+
+    def episode_stats(self):
+        """Tom tat episode vua ket thuc — cung dinh nghia voi `evaluate.py` de hai nguon so
+        lieu (train va eval) doc duoc tren cung mot thang."""
+        mean = lambda xs: float(np.mean(xs)) if xs else float("nan")  # noqa: E731
+        return {
+            "mean_abs_lane_offset": mean(self._ep_offsets),
+            "mean_abs_lane_offset_road": mean(self._ep_offsets_road),
+            "junction_steps": self._ep_junction_steps,
+            "town": self.current_town,
+        }
 
     # ------------------------------------------------------------------------- internals
     def _get_seg_frame(self, frame_id):
@@ -414,9 +516,49 @@ class CarlaLaneKeepEnv(object):
     def _compute_reward(self, state, steer, longitudinal):
         cfg = self.cfg
         speed_limit_mps = max(state["speed_limit_kmh"] / 3.6, 1e-6)
-        speed_term = float(np.clip(state["forward_speed_mps"], 0.0, speed_limit_mps))
         steer_delta = steer - self.previous_steer
         long_delta = longitudinal - self.previous_longitudinal
+
+        # ------------------------------------------------------------- thang do cua reward
+        # `reward_mode`:
+        #   "normalized" (mac dinh) — moi so hang khong thu nguyen, nam trong [0, 1].
+        #   "raw"                   — cong thuc cu (speed tinh bang m/s tho). Giu lai DUY NHAT
+        #                             de tai lap runs/ppo_v1..v3; khong dung cho lan chay moi.
+        #
+        # Vi sao phai doi: ban "raw" tra `w_speed * forward_speed_mps`, tuc thuong theo m/s
+        # THO. Do tren runs/ppo_v2 (Town04, co doan cao toc 90 km/h), so hang nay dat 13.47
+        # moi buoc, trong khi phat lech lan toi da chi 1.75 -> ti le 14:1. Hai he qua do duoc:
+        #   1. Policy hoc "chay nhanh, giu tim lan gan nhu mien phi": lech lan tren duong
+        #      thang di tu 0.098 m (IL) len 0.233-0.341 m (PPO) tren CHINH ban do da train,
+        #      te hon co y nghia thong ke (Welch t = 2.22).
+        #   2. Cung mot hanh vi lai duoc thuong khac nhau 3 LAN giua pho 30 km/h va cao toc
+        #      90 km/h, nen mot ham gia tri hoc o town nay sai thang o town kia — dieu do
+        #      lam viec train nhieu ban do (xem `town_rotate_episodes`) kho hon nhieu.
+        # Ban "normalized" chia moi dai luong cho thang tu nhien cua no: toc do cho gioi han
+        # toc do, lech lan cho nua be rong lan, goc lech cho 45 do. Sau do `w_*` moi thuc su
+        # la "trong so tuong doi", va return mot episode 500 buoc ~ 100 thay vi ~800.
+        if cfg.get("reward_mode", "normalized") == "raw":
+            speed_term = float(np.clip(state["forward_speed_mps"], 0.0, speed_limit_mps))
+            lane_term = abs(state["lane_offset_m"])
+            heading_term = abs(state["heading_error_rad"])
+        else:
+            # Mau so la TOC DO MUC TIEU, khong phai gioi han toc do hop phap.
+            #
+            # Ban dau to chia cho `speed_limit_mps` va do la mot loi: tren doan cao toc
+            # Town04 (90 km/h = 25 m/s), lai dung nhu IL — 7.56 m/s, chinh la trung binh
+            # cua tap train IL — chi duoc 7.56/25 = 0.30 diem toc do, nen sau khi tru phat
+            # lech lan thi tong con AM (-0.18 do duoc voi lech 0.85 m). Tuc reward noi voi
+            # policy rang DUNG YEN (0.00) tot hon lai xe. Do dung la che do hong "xe dung
+            # im" ma bang chan doan da canh bao.
+            #
+            # `min(target, limit)` giu ca hai tinh chat: thuong day du o toc do ma he thong
+            # thuc su lai duoc (nhat quan giua pho va cao toc), va van ha muc tieu xuong o
+            # nhung doan gioi han thap hon target.
+            speed_ref = min(float(cfg.get("target_speed_mps", 8.0)), speed_limit_mps)
+            speed_term = float(np.clip(state["forward_speed_mps"] / max(speed_ref, 1e-6), 0.0, 1.0))
+            half_width = max(float(state.get("lane_half_width_m", 1.75)), 1e-6)
+            lane_term = float(np.clip(abs(state["lane_offset_m"]) / half_width, 0.0, 1.0))
+            heading_term = float(np.clip(abs(state["heading_error_rad"]) / (np.pi / 4.0), 0.0, 1.0))
 
         # NGA TU: tat cac so hang doc tu waypoint. `lane_offset_m`, `heading_error_rad` va
         # `off_lane` deu suy ra tu "lan duong gan nhat", ma trong nga tu cac nhanh cat nhau
@@ -439,17 +581,32 @@ class CarlaLaneKeepEnv(object):
 
         reward = (
             cfg.get("w_speed", 1.0) * speed_term
-            - w_lane * abs(state["lane_offset_m"])
-            - w_head * abs(state["heading_error_rad"])
+            - w_lane * lane_term
+            - w_head * heading_term
             - cfg.get("w_steer_delta", 1.0) * steer_delta ** 2
             - cfg.get("w_long_delta", 0.5) * long_delta ** 2
             - cfg.get("w_yaw_rate", 0.1) * state["yaw_rate_rps"] ** 2
         )
 
         if in_junction:
-            # DONG BANG streak, khong phai xoa. Xe dang ra ngoai lan ma di vao nga tu thi van
-            # dang ra ngoai lan; xoa ve 0 se tang cho no mot lan "an xa" moi lan qua nga tu.
-            pass
+            # Trong nga tu, `off_lane` binh thuong la phep do RAC (waypoint tham chieu nhay
+            # sang nhanh vuong goc sau vai met), nen khong dung no de dem streak. Nhung
+            # "dong bang hoan toan" — ban truoc — la mot lo hong: no vo hieu hoa luon chot
+            # an toan, va reward cung da tat so hang bam lan o day, nen ben trong nga tu
+            # KHONG con bat ky ap luc nao giu xe tren mat duong.
+            #
+            # Do duoc tren runs/ppo_v4, Town04: 3/3 va cham deu xay ra trong nga tu, deu
+            # dam vao static.guardrail/static.fence, mot lan o lech lan +4.72 m — tuc xe da
+            # ra khoi mat duong hoan toan ma episode van khong bi dung. Town04 la ban do duy
+            # nhat co NUT GIAO CAO TOC: vung danh dau junction rat rong nen xe troi rat xa
+            # ma van "dang trong nga tu". Town01/Town02 (giao lo pho nho) khong bi: 0% va cham.
+            #
+            # Nguong rong o day giu dung y dinh ban dau (bo qua nhieu do vai chuc cm) nhung
+            # van bat duoc do lech LON, thu khong the la nhieu: 3 x nua be rong lan ~ 5.2 m.
+            factor = float(cfg.get("junction_off_lane_factor", 3.0))
+            half_width = max(float(state.get("lane_half_width_m", 1.75)), 1e-6)
+            if abs(state["lane_offset_m"]) > factor * half_width:
+                self.off_lane_streak += 1
         elif state["off_lane"]:
             reward -= cfg.get("off_lane_penalty", 5.0)
             self.off_lane_streak += 1
