@@ -149,6 +149,16 @@ def main():
 
     # `--town` do CarlaLaneKeepEnv xu ly (xem `_load_town`), dung chung voi train_ppo.py /
     # train_sac.py / evaluate.py thay vi moi script mot ban.
+    #
+    # Nhung `town` mac dinh la DANH SACH bon town de TRAIN xoay vong. Mot ban demo/danh gia
+    # phai co dinh mot ban do, neu khong ket qua tron nhieu ban do vao mot con so trung binh
+    # khong ung voi ban do nao. Giong het chot chan trong evaluate.py.
+    if isinstance(config.get("town"), (list, tuple)):
+        chosen = config["town"][0]
+        print("[!] --town khong duoc dat, config liet ke %s -> dung '%s'." % (
+            list(config["town"]), chosen))
+        config["town"] = chosen
+    config["town_rotate_episodes"] = 10 ** 9
     env = CarlaLaneKeepEnv(config, contract)
     episodes = config["_episodes"] or 3
     step_logger = None
