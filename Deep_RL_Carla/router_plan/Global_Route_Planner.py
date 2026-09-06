@@ -75,13 +75,13 @@ class GlobalRoutePlanner(object):
         goal_id = self.snap_to_graph(goal_location)
         if start_id is None or goal_id is None:
             raise RouteNotFoundError(
-                "Khong chieu duoc vi tri bat dau/dich len graph (khong nam gan lane Driving nao). "
-                "Thu diem gan duong hon, hoac tang resolution_m.")
+                "Không chiếu được vị trí bắt đầu/đích lên graph (không nằm gần lane Driving nào). "
+                "Thử điểm gần đường hơn, hoặc tăng resolution_m.")
         route = find_path(self.graph, start_id, goal_id)
         if route is None:
             raise RouteNotFoundError(
-                "A* khong tim thay duong di giua hai vi tri — co the o hai lane/road khong lien "
-                "thong (vd duong 1 chieu nguoc huong, khong co lane-change hop le). Thu diem dich khac.")
+                "A* không tìm thấy đường đi giữa hai vị trí — có thể ở hai lane/road không liên "
+                "thông (vd đường 1 chiều ngược hướng, không có lane-change hợp lệ). Thử điểm đích khác.")
         return route
 
     def resolve_goal_waypoint(self, args):

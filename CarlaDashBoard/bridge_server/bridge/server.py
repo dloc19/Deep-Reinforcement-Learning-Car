@@ -81,10 +81,10 @@ def _dispatch(message, sim: SimLoop):
     try:
         command = json.loads(message)
     except json.JSONDecodeError:
-        sim.hub.publish_control_text(protocol.error("BAD_JSON", "Khong parse duoc JSON."))
+        sim.hub.publish_control_text(protocol.error("BAD_JSON", "Không đọc được JSON."))
         return
     if not isinstance(command, dict) or "type" not in command:
-        sim.hub.publish_control_text(protocol.error("BAD_COMMAND", "Thieu truong 'type'."))
+        sim.hub.publish_control_text(protocol.error("BAD_COMMAND", "Thiếu trường 'type'."))
         return
     sim.submit(command)
 

@@ -88,7 +88,7 @@ class CarlaSession:
             for name in dir(carla.WeatherParameters) if name and name[0].isupper()
         }
         if preset_name not in presets:
-            raise ValueError("Weather preset khong hop le: %s" % preset_name)
+            raise ValueError("Weather preset không hợp lệ: %s" % preset_name)
         self.world.set_weather(presets[preset_name])
 
     def current_town_short(self):
@@ -104,13 +104,13 @@ class CarlaSession:
             vehicle_bp.set_attribute("role_name", self.cfg.role_name)
         spawn_points = self.map.get_spawn_points()
         if not spawn_points:
-            raise RuntimeError("Map khong co spawn point nao.")
+            raise RuntimeError("Bản đồ không có spawn point nào.")
         transform = (spawn_points[spawn_index]
                      if 0 <= spawn_index < len(spawn_points)
                      else random.choice(spawn_points))
         self.ego = self.world.try_spawn_actor(vehicle_bp, transform)
         if self.ego is None:
-            raise RuntimeError("Khong spawn duoc xe — spawn point co the dang bi chiem.")
+            raise RuntimeError("Không spawn được xe — spawn point có thể đang bị chiếm.")
         self.world.tick()
         self.spawn_cameras()
         return self.ego

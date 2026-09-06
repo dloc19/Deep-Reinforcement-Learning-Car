@@ -110,7 +110,7 @@ def _build_agent(algorithm, contract, device):
         actor = GaussianPolicy(contract.scalar_feature_dim, contract.num_classes)
         critic = TwinQNetwork(contract.scalar_feature_dim, action_dim=2, num_classes=contract.num_classes)
         return SACAgent(actor, critic, {}, device)
-    raise ValueError("drl_algorithm phai la 'ppo' hoac 'sac', nhan duoc '%s'" % algorithm)
+    raise ValueError("drl_algorithm phải là 'ppo' hoặc 'sac', nhận được '%s'" % algorithm)
 
 
 def describe_checkpoint(path):

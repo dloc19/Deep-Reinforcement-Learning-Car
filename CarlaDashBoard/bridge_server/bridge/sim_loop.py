@@ -125,7 +125,7 @@ class SimLoop:
         handler = getattr(self, "_cmd_" + kind, None)
         if handler is None:
             self.hub.publish_control_text(
-                protocol.error("UNKNOWN_COMMAND", "Khong ro lenh: %s" % kind))
+                protocol.error("UNKNOWN_COMMAND", "Không rõ lệnh: %s" % kind))
             return
         handler(command)
 
@@ -146,11 +146,11 @@ class SimLoop:
         mode_name = command.get("mode")
         if mode_name not in protocol.KNOWN_MODES:
             self.hub.publish_control_text(
-                protocol.error("UNKNOWN_MODE", "Mode khong hop le: %s" % mode_name))
+                protocol.error("UNKNOWN_MODE", "Mode không hợp lệ: %s" % mode_name))
             return
         if self.session.ego is None:
             self.hub.publish_control_text(
-                protocol.error("NO_SESSION", "Chua co xe — goi StartSession truoc."))
+                protocol.error("NO_SESSION", "Chưa có xe — bấm \"Bắt đầu phiên\" ở màn hình Settings trước."))
             return
 
         self.hub.publish_control_text(protocol.dumps("ModeChanging", mode=mode_name))
@@ -201,13 +201,13 @@ class SimLoop:
     def _cmd_SetDestination(self, command):
         if self.session.ego is None:
             self.hub.publish_control_text(
-                protocol.error("NO_SESSION", "Chua co xe — goi StartSession truoc."))
+                protocol.error("NO_SESSION", "Chưa có xe — bấm \"Bắt đầu phiên\" ở màn hình Settings trước."))
             return
         town = self.session.current_town_short()
         planner = self._planner_cache.get(town)
         if planner is None:
             self.hub.publish_control_text(
-                protocol.error("MAP_NOT_READY", "Do thi A* cua ban do nay chua san sang, thu lai sau it giay."))
+                protocol.error("MAP_NOT_READY", "Đồ thị A* của bản đồ này chưa sẵn sàng, thử lại sau ít giây."))
             return
 
         try:
@@ -243,12 +243,12 @@ class SimLoop:
             index = int(command["spawn_index"])
             spawn_points = self.session.map.get_spawn_points()
             if not 0 <= index < len(spawn_points):
-                raise ValueError("spawn_index %d khong hop le (0..%d)" % (index, len(spawn_points) - 1))
+                raise ValueError("spawn_index %d không hợp lệ (0..%d)" % (index, len(spawn_points) - 1))
             return spawn_points[index].location
         if "x" in command and "y" in command:
             return carla.Location(
                 x=float(command["x"]), y=float(command["y"]), z=float(command.get("z", 0.0)))
-        raise ValueError("Can 'spawn_index' hoac ca 'x' va 'y'.")
+        raise ValueError("Cần 'spawn_index' hoặc cả 'x' và 'y'.")
 
     def _get_router_plan(self):
         if self._router_plan is None:
@@ -267,8 +267,8 @@ class SimLoop:
         path = path.expanduser().resolve()
         if not path.is_file():
             raise RuntimeError(
-                "Khong tim thay checkpoint: %s (dat --il-checkpoint-path / --drl-checkpoint-path "
-                "neu file nam noi khac, hoac train model truoc)." % path)
+                "Không tìm thấy checkpoint: %s (đặt --il-checkpoint-path / --drl-checkpoint-path "
+                "nếu file nằm nơi khác, hoặc train model trước)." % path)
         return path
 
     def _build_il_mode(self):
@@ -384,7 +384,7 @@ class SimLoop:
     def _cmd_RecordStart(self, command):
         if getattr(self.current_mode, "start_recording", None) is None:
             self.hub.publish_control_text(
-                protocol.error("NOT_RECORDABLE", "Mode hien tai khong ho tro ghi du lieu."))
+                protocol.error("NOT_RECORDABLE", "Mode hiện tại không hỗ trợ ghi dữ liệu."))
             return
         self.current_mode.start_recording()
         self.hub.publish_control_text(protocol.dumps("RecordingStarted"))

@@ -17,4 +17,4 @@ def build(mode_name, cfg):
         return DataCollectionMode(cfg)
     if mode_name == protocol.MODE_IDLE:
         return ModeRuntime()
-    raise ValueError("Mode khong hop le: %s" % mode_name)
+    raise ValueError("Mode không hợp lệ: %s" % mode_name)
