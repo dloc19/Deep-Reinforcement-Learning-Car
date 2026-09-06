@@ -32,8 +32,27 @@ from sac.replay_buffer import ReplayBuffer  # noqa: E402
 from sac.sac_agent import SACAgent  # noqa: E402
 
 _EMPTY_STATS = {"critic_loss": float("nan"), "actor_loss": float("nan"), "alpha_loss": float("nan"),
-                "alpha": float("nan"), "mean_q": float("nan"), "entropy": float("nan")}
+                "alpha": float("nan"), "mean_q": float("nan"), "entropy": float("nan"),
+                "explained_variance": float("nan"), "freeze_actor": True}
 
+
+_EPISODE_FIELDS_EXTRA = ["mean_abs_lane_offset", "mean_abs_lane_offset_road",
+                         "junction_steps", "town"]
+_EMPTY_EPISODE_STATS = {"mean_abs_lane_offset": float("nan"),
+                        "mean_abs_lane_offset_road": float("nan"),
+                        "junction_steps": 0, "town": ""}
+
+
+def resolve_target_speed(config, contract):
+    """`target_speed_mps=None` -> trung binh `speed_mps` cua tap train IL.
+
+    Doc tu chinh checkpoint thay vi go mot hang so, de neu train lai IL tren du lieu co
+    toc do khac thi reward tu bam theo, khong lech am tham."""
+    if config.get("target_speed_mps"):
+        return float(config["target_speed_mps"])
+    stats = getattr(contract, "norm_stats", {}) or {}
+    mean = stats.get("speed_mps", (8.0, 1.0))[0]
+    return float(max(mean, 1.0))
 
 def resolve_device(config):
     if config["device"] == "cuda" and torch.cuda.is_available():
@@ -63,8 +82,19 @@ def main():
                       ["traffic_light_%s" % v for v in contract.traffic_light_vocab])
     print("Observation contract: %d scalar features: %s" % (contract.scalar_feature_dim, feature_names))
 
+    log_std_init = config.get("log_std_init")
+    if config.get("log_std_init_from_checkpoint", True) and contract.action_std:
+        # Truyen CA CAP [steer, longitudinal] — `log_std_head` la Linear(32, 2) nen bias cua
+        # no dat duoc rieng cho tung chieu. Ban truoc lay trung binh hai chieu thanh mot vo
+        # huong; xem chu thich trong sac/networks.py de biet hau qua do duoc.
+        log_std_init = list(contract.default_log_std())
+        print("log_std_head khoi tao %s -> std %s (tu action_std cua checkpoint IL)" % (
+            [round(v, 3) for v in log_std_init],
+            [round(2.718281828 ** v, 4) for v in log_std_init]))
+    if log_std_init is None:
+        log_std_init = -2.5
     actor = GaussianPolicy(contract.scalar_feature_dim, contract.num_classes,
-                           log_std_init=config.get("log_std_init", -2.5))
+                           log_std_init=log_std_init)
     critic = TwinQNetwork(contract.scalar_feature_dim, action_dim=2, num_classes=contract.num_classes)
 
     if config["warm_start"]:
@@ -74,6 +104,10 @@ def main():
         print("[!] Bo qua warm-start — actor khoi tao ngau nhien (chi nen dung de doi chung/debug).")
 
     agent = SACAgent(actor, critic, config, device)
+    print("actor_lr=%.1e | critic_lr=%.1e | alpha khoi tao=%.3f | critic_warmup_steps=%d | "
+          "BatchNorm dong bang: %d lop" % (
+              config.get("actor_lr", 3e-4), config.get("critic_lr", 3e-4),
+              float(agent.alpha.item()), agent.critic_warmup_steps, agent.frozen_bn))
 
     global_step = 0
     if config["_resume"]:
@@ -82,6 +116,9 @@ def main():
         global_step = state.get("step", 0)
         print("Resume tu:", config["_resume"], "| step =", global_step)
 
+    config["target_speed_mps"] = resolve_target_speed(config, contract)
+    print("target_speed = %.2f m/s (%.0f km/h) — moc \"day du diem toc do\"" % (
+        config["target_speed_mps"], config["target_speed_mps"] * 3.6))
     env = CarlaLaneKeepEnv(config, contract)
 
     obs_h = config.get("obs_height", config["height"])
@@ -99,11 +136,14 @@ def main():
         config["buffer_capacity"], obs_h, obs_w,
         config["buffer_capacity"] * obs_h * obs_w / (1024.0 ** 3)))
 
+    # Xem chu thich cung cho trong train_ppo.py.
     episode_log = CsvLogger(output_dir / "episode_log.csv",
-                             ["step", "episode_reward", "episode_len", "terminate_reason"])
+                             ["step", "episode_reward", "episode_len",
+                              "terminate_reason"] + _EPISODE_FIELDS_EXTRA)
     update_log = CsvLogger(output_dir / "update_log.csv",
                             ["step", "critic_loss", "actor_loss", "alpha_loss", "alpha",
-                             "mean_q", "entropy", "steps_per_sec", "mean_episode_reward"])
+                             "mean_q", "entropy", "explained_variance", "steps_per_sec",
+                             "mean_episode_reward"])
 
     # Standard SAC always explores with pure-random actions for the first `learning_starts`
     # steps to seed the replay buffer with diverse, unbiased transitions before any critic/
@@ -133,12 +173,12 @@ def main():
             next_obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
 
-            # See sac/replay_buffer.py docstring: never store a truncated-terminal
-            # transition — this buffer derives next_obs from the following slot, which a
-            # truncated episode's env.reset() would otherwise fill with an unrelated new
-            # episode's first observation.
-            if not (truncated and not terminated):
-                buffer.add(obs["seg"], obs["scalar"], action, reward, terminated)
+            # See sac/replay_buffer.py docstring. Transition bi CAT vi het gio van duoc
+            # luu (neu khong, transition lien truoc no se lay `next_obs` tu episode moi),
+            # nhung duoc danh dau `truncated=True` de khong bao gio bi sample. `done` luu
+            # vao buffer la `terminated` — chi va cham/ra khoi lan that su moi cat bootstrap.
+            buffer.add(obs["seg"], obs["scalar"], action, reward, terminated,
+                       truncated=truncated and not terminated)
 
             episode_reward += reward
             episode_len += 1
@@ -146,10 +186,11 @@ def main():
             obs = next_obs
 
             if done:
-                episode_log.log({
-                    "step": global_step, "episode_reward": episode_reward, "episode_len": episode_len,
-                    "terminate_reason": info.get("terminate_reason", "time_limit"),
-                })
+                stats_ep = info.get("episode_stats", _EMPTY_EPISODE_STATS)
+                episode_log.log(dict(stats_ep,
+                    step=global_step, episode_reward=episode_reward, episode_len=episode_len,
+                    terminate_reason=info.get("terminate_reason", "time_limit"),
+                ))
                 recent_episode_rewards.append(episode_reward)
                 recent_episode_rewards = recent_episode_rewards[-20:]
                 episode_reward, episode_len = 0.0, 0
@@ -174,11 +215,15 @@ def main():
                     "step": global_step, "critic_loss": stats["critic_loss"],
                     "actor_loss": stats["actor_loss"], "alpha_loss": stats["alpha_loss"],
                     "alpha": stats["alpha"], "mean_q": stats["mean_q"], "entropy": stats["entropy"],
+                    "explained_variance": stats.get("explained_variance", float("nan")),
                     "steps_per_sec": steps_per_sec, "mean_episode_reward": mean_reward,
                 })
-                print("step=%d critic_loss=%.4f actor_loss=%.4f alpha=%.4f mean_ep_reward=%.2f (%.1f steps/s)" % (
-                    global_step, stats["critic_loss"], stats["actor_loss"], stats["alpha"],
-                    mean_reward, steps_per_sec))
+                print("step=%d%s critic_loss=%.4f actor_loss=%.4f alpha=%.4f ev=%.3f "
+                      "mean_ep_reward=%.2f (%.1f steps/s)" % (
+                          global_step, " [critic-warmup]" if stats.get("freeze_actor") else "",
+                          stats["critic_loss"], stats["actor_loss"], stats["alpha"],
+                          stats.get("explained_variance", float("nan")),
+                          mean_reward, steps_per_sec))
                 last_log_time, last_log_step = time.time(), global_step
 
             if global_step % config["save_every_steps"] == 0:
