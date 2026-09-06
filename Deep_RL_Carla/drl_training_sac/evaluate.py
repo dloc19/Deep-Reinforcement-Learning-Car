@@ -1,16 +1,13 @@
-"""Run a trained PPO or SAC checkpoint against a live CARLA server for N episodes and report
-lane-keeping metrics — the DRL-side counterpart to the IL notebook's section 11 evaluation.
+"""Chay mot checkpoint SAC da train tren CARLA server that N episode va bao cao cac chi so
+bam lan - doi ung ben DRL cua muc 11 (danh gia) trong notebook IL.
 
-Shared across both algorithms because evaluation only needs
-`agent.select_action(seg, scalar, deterministic) -> action`, a call shape both
-`ppo.ppo_agent.PPOAgent` and `sac.sac_agent.SACAgent` expose identically (see their
-docstrings) — no algorithm-specific evaluation logic needed.
+Danh gia chi goi `agent.select_action(seg, scalar, deterministic) -> action`, nen no khong
+dung toi critic hay replay buffer.
 
-Usage:
-    python evaluate.py --algorithm ppo --config ppo_config.json \\
-        --resume runs/ppo_lane_keep/ppo_latest.pt --episodes 10 --deterministic
-    python evaluate.py --algorithm sac --config sac_config.json \\
-        --resume runs/sac_lane_keep/sac_latest.pt --episodes 10 --deterministic
+Chay (MOT ban do moi lo danh gia - xem chu thich ve `--town` ben duoi):
+    python evaluate.py --config sac_config.json --town Town05 \
+        --resume runs/sac_f/sac_latest.pt --episodes 30 --deterministic \
+        --eval-csv-out runs/sac_f/eval_Town05.csv
 """
 
 import sys
@@ -22,7 +19,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from config import load_config, peek_algorithm  # noqa: E402
+from config import load_config  # noqa: E402
 from csv_logger import CsvLogger  # noqa: E402
 from envs.carla_lane_keep_env import CarlaLaneKeepEnv  # noqa: E402
 from policy.checkpoint_io import load_il_checkpoint  # noqa: E402
@@ -40,37 +37,32 @@ def resolve_target_speed(config, contract):
     mean = stats.get("speed_mps", (8.0, 1.0))[0]
     return float(max(mean, 1.0))
 
-def build_agent(algorithm, contract, config, device):
-    if algorithm == "ppo":
-        from policy.actor_critic import GaussianActor, ValueCritic
-        from ppo.ppo_agent import PPOAgent
-        actor = GaussianActor(contract.scalar_feature_dim, contract.num_classes)
-        critic = ValueCritic(contract.scalar_feature_dim, contract.num_classes)
-        return PPOAgent(actor, critic, config, device)
-    if algorithm == "sac":
-        from sac.networks import GaussianPolicy, TwinQNetwork
-        from sac.sac_agent import SACAgent
-        actor = GaussianPolicy(contract.scalar_feature_dim, contract.num_classes)
-        critic = TwinQNetwork(contract.scalar_feature_dim, action_dim=2, num_classes=contract.num_classes)
-        return SACAgent(actor, critic, config, device)
-    raise ValueError("algorithm phai la 'ppo' hoac 'sac', nhan duoc '%s'" % algorithm)
+def build_agent(contract, config, device):
+    from sac.networks import GaussianPolicy, TwinQNetwork
+    from sac.sac_agent import SACAgent
+    actor = GaussianPolicy(contract.scalar_feature_dim, contract.num_classes)
+    critic = TwinQNetwork(contract.scalar_feature_dim, action_dim=2,
+                          num_classes=contract.num_classes)
+    return SACAgent(actor, critic, config, device)
 
 
 def main():
-    algorithm = peek_algorithm()
-    config = load_config(algorithm)
+    config = load_config()
     if not config["_resume"]:
-        raise SystemExit("Can --resume <checkpoint .pt> de danh gia (vd ppo_latest.pt / sac_latest.pt).")
+        raise SystemExit("Can --resume <checkpoint .pt> de danh gia "
+                         "(vd runs/sac_f/sac_latest.pt).")
 
     device = torch.device("cuda" if config["device"] == "cuda" and torch.cuda.is_available() else "cpu")
     checkpoint = torch.load(config["_resume"], map_location=device)
 
+    # Chan nap nham checkpoint PPO (`../drl_training/runs/ppo_v*`): kien truc actor khac
+    # han (khong co `log_std_head`, `log_std` la vector doc lap trang thai), nen neu khong
+    # kiem tra o day thi phep nap se bo qua phan lech va cho ra mot policy sai am tham.
     checkpoint_algo = checkpoint.get("algorithm")
-    if checkpoint_algo and checkpoint_algo != algorithm:
-        print("[!] --algorithm=%s nhung checkpoint duoc luu boi thuat toan '%s' — dung '%s'." % (
-            algorithm, checkpoint_algo, checkpoint_algo))
-        algorithm = checkpoint_algo
-        config = load_config(algorithm)  # nap lai config voi dung ALGO_DEFAULTS (an toan: parse lai cung argv)
+    if checkpoint_algo and checkpoint_algo != "sac":
+        raise SystemExit(
+            "Checkpoint duoc luu boi thuat toan '%s', khong phai SAC. Thu muc nay chi danh "
+            "gia SAC - dung ../drl_training/evaluate.py cho checkpoint PPO." % checkpoint_algo)
 
     il_checkpoint_path = Path(config["il_checkpoint"]).expanduser().resolve()
     il_checkpoint = load_il_checkpoint(il_checkpoint_path, map_location="cpu")
@@ -89,14 +81,11 @@ def main():
     # Chot chan lan hai: du sao cung tat xoay vong trong luc danh gia.
     config["town_rotate_episodes"] = 10 ** 9
 
-    agent = build_agent(algorithm, contract, config, device)
+    agent = build_agent(contract, config, device)
     # Danh gia chi goi `select_action` -> chi can actor. Nap "actor_only" de mot checkpoint
     # train truoc khi kien truc critic doi van danh gia duoc: critic khong tham gia phep
     # tinh nao o day, nen tu choi nap no chi lam mat kha nang so sanh cac lan train cu.
-    if algorithm == "sac":
-        agent.load_state_dict(checkpoint, actor_only=True)
-    else:
-        agent.load_state_dict(checkpoint)
+    agent.load_state_dict(checkpoint, actor_only=True)
     agent.actor.eval()
     agent.critic.eval()
 
@@ -104,7 +93,7 @@ def main():
     # config.py — o n=10 ti le va cham khong phan biet duoc hai checkpoint bat ky.
     episodes = config["_episodes"] or config.get("eval_episodes", 30)
     deterministic = bool(config["_deterministic"])
-    print("Danh gia %s: %d episode, deterministic=%s" % (algorithm.upper(), episodes, deterministic))
+    print("Danh gia SAC: %d episode, deterministic=%s" % (episodes, deterministic))
 
     config["target_speed_mps"] = resolve_target_speed(config, contract)
     print("target_speed = %.2f m/s (%.0f km/h) — moc \"day du diem toc do\"" % (
@@ -148,7 +137,7 @@ def main():
             mean_offset_road = (float(np.mean(lane_offsets_road)) if lane_offsets_road
                                 else float("nan"))
             results.append({
-                "algorithm": algorithm, "episode": episode, "reward": ep_reward, "length": ep_len,
+                "algorithm": "sac", "episode": episode, "reward": ep_reward, "length": ep_len,
                 "collided": collided, "off_lane_steps": off_lane_steps,
                 "junction_steps": junction_steps,
                 "mean_abs_lane_offset": mean_offset,
@@ -191,7 +180,7 @@ def main():
     mean_offset_road = float(np.nanmean([r["mean_abs_lane_offset_road"] for r in results]))
     junction_rate = (100.0 * sum(r["junction_steps"] for r in results)
                      / max(sum(r["length"] for r in results), 1))
-    print("\n=== Tong ket %d episode (%s) ===" % (len(results), algorithm.upper()))
+    print("\n=== Tong ket %d episode (SAC) ===" % len(results))
     print("Reward trung binh: %.2f +/- %.2f" % (float(np.mean(rewards)), float(np.std(rewards))))
     print("Ty le va cham: %.1f%%" % collision_rate)
     print("Lech lan trung binh (|m|): %.3f  (chi duong thuong: %.3f)" % (

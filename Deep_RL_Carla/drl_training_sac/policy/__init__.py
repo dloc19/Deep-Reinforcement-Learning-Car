@@ -1,3 +1,4 @@
-"""Actor/critic networks shared by PPO fine-tuning, built to warm-start from the
-Behavior Cloning checkpoint produced by `behavior_cloning/train_il_v9.ipynb`.
+"""Cac khoi dung chung giua IL va DRL: backbone CNN+MLP, hop dong quan sat, nap/remap
+checkpoint IL tu `behavior_cloning/train_il_v9.ipynb`. Mang actor/critic cua SAC nam o
+`sac/networks.py`.
 """

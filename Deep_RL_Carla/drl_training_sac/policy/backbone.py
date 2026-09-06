@@ -1,6 +1,6 @@
 """Shared CNN(segmentation) + MLP(scalar) trunk, plus the shared "trunk head" used by every
 DRL algorithm in this package (PPO's `GaussianActor`/`ValueCritic`, SAC's `GaussianPolicy`/
-`QNetwork` — see `policy/actor_critic.py` and `sac/networks.py`).
+`QNetwork` — see `../drl_training/policy/actor_critic.py` and `sac/networks.py`).
 
 This mirrors `SteeringNet` in `behavior_cloning/train_il_v9.ipynb` layer-for-layer,
 including attribute names (`conv`, `pool`, `cnn_fc`, `scalar_mlp`) and the first two layers
@@ -16,7 +16,7 @@ means this backbone accepts any (H, W), so the DRL env can run at a different re
 the one IL trained on, while still loading IL conv weights directly. Three numbers are
 involved and they are NOT the same number:
   - 480x384  what the collector records (`collector_config.json`'s `camera.width/height`)
-    and what the DRL env's camera runs at (`ppo_config.json`/`sac_config.json`).
+    and what the DRL env's camera runs at (`sac_config.json`).
   - 240x192  what `SteeringNet` actually saw during IL training (`IMAGE_WIDTH`/
     `IMAGE_HEIGHT` in train_il_v9.ipynb — masks are downscaled with `downscale_labels`).
   - 160x128  this file's fallback when a config omits the field.
@@ -99,7 +99,7 @@ def freeze_batchnorm(*modules):
        BatchNorm chuan hoa theo thong ke CUA BATCH, nen hai lan forward do la hai mang KHAC
        NHAU. Ti so importance sampling `exp(new_log_prob - old_log_prob)` cua PPO gia dinh
        chung la mot; neu khong, moi advantage deu bi lech boi nhieu cua BatchNorm thay vi chi
-       phan anh buoc cap nhat policy. Day dung la ly do `policy/actor_critic.py` da co y
+       phan anh buoc cap nhat policy. Day dung la ly do PPO (`../drl_training/`) cung co y
        khong dung Dropout — BatchNorm o train mode gay ra cung mot van de, con nang hon.
 
     2. GIU TRONG SO WARM-START. `running_mean`/`running_var` cua actor den tu checkpoint IL
@@ -125,7 +125,7 @@ def build_trunk_head(in_features, hidden1=64, hidden2=32):
     Matches `SteeringNet.head`'s first two Linear+ELU layers 1:1 (IL's `head.0` and
     `head.3` once its two `nn.Dropout` layers are excluded — dropout has no place in an
     RL actor/critic that gets re-evaluated on the same stored observation multiple times
-    during an update, see `policy/actor_critic.py` docstring). `policy/il_compat.py` relies
+    during an update, see `sac/networks.py` docstring). `policy/il_compat.py` relies
     on this exact shape (`in_features -> hidden1 -> hidden2`, two Linear+ELU pairs) to remap
     IL's `head.0`/`head.3` weights onto whatever this is attached to as `self.trunk_head`.
     """

@@ -1,5 +1,5 @@
 """Generic IL-checkpoint -> DRL-module state_dict remapping, shared by PPO's
-`GaussianActor` and SAC's `GaussianPolicy` (see `policy/actor_critic.py` / `sac/networks.py`).
+`GaussianActor` (o `../drl_training/`) va SAC's `GaussianPolicy` (see `sac/networks.py`).
 
 IL's `SteeringNet` (in `behavior_cloning/train_il_v9.ipynb`) has:
     conv.*, pool (no params), cnn_fc.*, scalar_mlp.*      -> the shared backbone

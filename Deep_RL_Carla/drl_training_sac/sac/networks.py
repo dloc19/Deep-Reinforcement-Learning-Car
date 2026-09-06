@@ -2,7 +2,8 @@
 "Soft Actor-Critic Algorithms and Applications").
 
 Reuses `policy.backbone.PolicyBackbone` + `policy.backbone.build_trunk_head` — the exact
-same building blocks as PPO's `GaussianActor`/`ValueCritic` (`policy/actor_critic.py`) — so
+same building blocks as PPO's `GaussianActor`/`ValueCritic`
+(`../drl_training/policy/actor_critic.py`) — so
 warm-starting from the IL checkpoint uses the same `policy/il_compat.py` helpers on both
 algorithms instead of two independently-maintained remap implementations.
 
@@ -98,7 +99,7 @@ class GaussianPolicy(nn.Module):
     @torch.no_grad()
     def select_action(self, seg_map, scalar_features, deterministic=False):
         """Algorithm-agnostic single-return convenience used by `evaluate.py` (mirrors
-        `policy.actor_critic.GaussianActor.select_action`)."""
+        `../drl_training/policy/actor_critic.py::GaussianActor.select_action`)."""
         action, _log_prob = self.act(seg_map, scalar_features, deterministic)
         return action
 
@@ -153,7 +154,7 @@ def load_il_actor_weights(actor, il_checkpoint):
     """Warm-start `actor.backbone` + `actor.trunk_head` + `actor.mean_head` from an IL
     checkpoint dict (`torch.load("best_il_model.pth")`). `actor.log_std_head` is left at its
     fresh init — IL has no notion of action-noise scale. Identical remap strategy to PPO's
-    `policy.actor_critic.load_il_actor_weights`, via the same shared `policy/il_compat.py`
+    PPO's `load_il_actor_weights` (`../drl_training/`), via the same shared `policy/il_compat.py`
     helpers — see that module's docstring for why this guarantees the two algorithms can
     never silently diverge in how they interpret an IL checkpoint.
     """

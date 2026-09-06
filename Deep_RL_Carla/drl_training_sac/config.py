@@ -1,21 +1,25 @@
-"""Shared CLI + JSON config loading for `train_ppo.py` / `train_sac.py` / `evaluate.py`.
+"""Shared CLI + JSON config loading for `train_sac.py` / `evaluate.py`.
 
 Mirrors the `--config` JSON-overrides-defaults pattern used by
 `data_collection/carla_collector/config.py`, flattened into one dict since the env/agent
 code here just does plain keyword lookups (`cfg.get("w_lane_offset", 1.0)`) instead of
 argparse groups.
 
-`COMMON_DEFAULTS` covers everything algorithm-agnostic (CARLA connection, camera, env
-dynamics, reward weights, warm-start/IL-checkpoint settings). `ALGO_DEFAULTS["ppo"|"sac"]`
-adds the on-policy/off-policy-specific hyperparameters on top, so `ppo_config.json` and
-`sac_config.json` only need to *override* what's actually different — see either file.
+`ENV_DEFAULTS` covers everything the environment needs (CARLA connection, camera, env
+dynamics, reward weights, warm-start/IL-checkpoint settings); `SAC_DEFAULTS` adds the
+off-policy hyperparameters on top, so `sac_config.json` only needs to *override* what is
+actually different — xem chinh file do.
+
+Thu muc nay CHI chay SAC (off-policy). Ban PPO (on-policy) nam o `../drl_training/`; moi
+tham chieu toi `train_ppo.py` / `runs/ppo_v*` trong cac chu thich duoi day la BANG CHUNG DO
+DUOC ben do, khong phai code trong thu muc nay.
 """
 
 import argparse
 import json
 from pathlib import Path
 
-COMMON_DEFAULTS = {
+ENV_DEFAULTS = {
     # connection
     "host": "127.0.0.1", "port": 2000, "timeout": 20.0,
     # Timeout RIENG cho `client.load_world()` (xem CarlaLaneKeepEnv._load_town). Tach khoi
@@ -141,141 +145,132 @@ COMMON_DEFAULTS = {
     "warm_start": True, "device": "cuda", "gamma": 0.99,
 }
 
-ALGO_DEFAULTS = {
-    "ppo": {
-        "output": "./runs/ppo_lane_keep",
-        # LR TACH RIENG actor/critic + `critic_warmup_updates`: xem docstring
-        # ppo/ppo_agent.py.__init__ va §12 cua behavior_cloning/train_il_v9.ipynb.
-        "actor_lr": 2e-5, "critic_lr": 3e-4, "critic_warmup_updates": 10,
-        # [steer, longitudinal]. std(steer) = e^-3 = 0.05, du de tham do quanh mot lenh lai
-        # co bien do dien hinh 0.005-0.03 ma khong lang xe ra khoi lan ngay rollout dau.
-        # None = LAY TU CHECKPOINT IL (`action_std`, do chinh notebook IL ghi lai).
-        # Truoc day day la (-3.0, -1.5) dat bang uoc luong tay -> std (0.050, 0.223), trong
-        # khi do lech thuc te cua hanh dong IL la (0.078, 0.306). Tuc nhieu tham do chi bang
-        # 64%/73% bien thien tu nhien cua chinh hanh vi dang duoc fine-tune. Checkpoint da
-        # mang san con so dung; khong co ly do gi doan lai.
-        "log_std_init": None,
-        "gae_lambda": 0.95, "clip_range": 0.2,
-        # null = TAT clip value; xem ppo/ppo_agent.py.__init__ (nguong tuyet doi 0.2 lam
-        # critic cham 12 lan o thang do return 200-800 cua env nay).
-        "value_clip_range": None, "entropy_coef": 0.0, "value_coef": 0.5,
-        "max_grad_norm": 0.5, "epochs": 10, "batch_size": 128, "target_kl": 0.02,
-        # total_steps dem QUYET DINH: 200k x 0.2s = 11 gio mo phong. Con so cu (2 trieu)
-        # duoc dat khi 1 step = 1 tick 0.1s; giu nguyen se thanh 111 gio mo phong.
-        "total_steps": 200000, "n_steps": 1024,
-        # 30, khong phai 3: o n=10 ti le va cham chi la dem 1-2 vu nen khong phan biet duoc
-        # hai checkpoint bat ky (do duoc: IL 2/10, v2 1/10, v3 2/10 tren Town04).
-        "save_every_updates": 5, "eval_every_updates": 10, "eval_episodes": 30,
-    },
-    "sac": {
-        "output": "./runs/sac_lane_keep",
-        # actor_lr THAP hon critic_lr 10 lan, cung ly do va cung ti le nhu PPO
-        # (xem ppo/ppo_agent.py.__init__): actor da duoc warm-start tu IL, critic thi khoi
-        # tao ngau nhien. Cho ca hai cung mot LR nghia la xoa trong so IL bang gradient sinh
-        # ra tu mot ham gia tri chua hoc duoc gi.
-        #
-        # 3e-4 (ban dau, lay tu mac dinh SAC sach) la QUA CAO o day: SAC lam
-        # 60000/train_freq 4 = 15 000 gradient step, tuong duong 195 update x 80 minibatch =
-        # 15 600 cua PPO. Cung so buoc cap nhat ma LR cao gap 15 lan PPO (2e-5) nghia la
-        # actor dich chuyen gap 15 lan — dung co che da pha hong warm-start o runs/ppo_v2/v3.
-        # 1e-5, thap hon ca PPO (2e-5), va co ly do cau truc chu khong phai tuy tien:
-        # PPO co VUNG TIN CAY — `clip_range` 0.2 chan ti so importance sampling va
-        # `target_kl` cat epoch som — nen policy khong the nhay xa trong mot update du
-        # gradient lon co nao. SAC khong co gi tuong duong: `actor_loss = alpha*log_prob -
-        # min_Q` duoc toi uu tu do. Cong them Adam chuan hoa do lon gradient (moi tham so
-        # dich ~lr moi buoc bat ke gradient nho hay lon), nen mot huong gradient NHAT QUAN
-        # tu mot critic con vo nghia se tich luy rat nhanh.
-        # Do duoc tren runs/sac_v2_smoke2 voi actor_lr 3e-5: chi 650 buoc actor da lam lenh
-        # lai xac dinh troi tu -0.001 sang -0.274 va lenh ga tu +0.288 sang -0.372.
-        "actor_lr": 1e-5, "critic_lr": 3e-4, "alpha_lr": 3e-4,
-        "tau": 0.005,
-        # gamma 0.95 RIENG cho SAC, khac 0.99 dung chung o COMMON_DEFAULTS.
-        #
-        # Ly do la ti le giua mot hanh dong va chan troi. Moi hanh dong keo dai 0.2s
-        # (`action_repeat` 4). Voi gamma 0.99, chan troi hieu dung ~1/(1-g) = 100 buoc =
-        # 20 giay, nen MOT hanh dong chiem 1% chan troi — va policy con tu sua o cac buoc
-        # sau, nen hau qua dai han cua viec be lai mot nhip that su rat nho. Do la ly do
-        # `dQ/da` nho: khong phai critic hoc kem ma la tinh chat cua MDP nay.
-        #
-        # gamma 0.95 -> chan troi ~20 buoc = 4 giay. Mot hanh dong chiem 5% thay vi 1%, tuc
-        # tin hieu tang 5 lan. 4 giay van du dai cho bam lan: hau qua cua mot lenh lai the
-        # hien trong 1-3 giay. PPO khong can dieu nay vi GAE CONG DON hang chuc hanh dong
-        # doc quy dao thanh mot advantage du lon; SAC phai doc tin hieu tu MOT hanh dong.
-        "gamma": 0.95,
-        # -action_dim = -2.0 (Haarnoja et al.) la mac dinh cho tac vu dieu khien tong quat.
-        # O day no qua CAO: entropy muc do dat buoc alpha giu do lech lon tren CHIEU STEER,
-        # trong khi lenh lai dien hinh chi 0.005-0.03. Ha xuong -4.0 cho phep policy nhon
-        # hon ma van con tham do o chieu longitudinal.
-        "target_entropy": -4.0,
-        # Nhu PPO: None = lay tu `action_std` cua checkpoint IL (lay trung binh log cua hai
-        # chieu, vi SAC dung mot `log_std_head` phu thuoc trang thai chu khong phai vector).
-        "log_std_init_from_checkpoint": True,
-        # alpha khoi tao (xem sac/sac_agent.py.__init__). `actor_loss = alpha*log_prob -
-        # min_Q`, nen gia tri dung phu thuoc THANG CUA Q, va thang do vua doi 15 lan khi
-        # reward chuyen sang "normalized":
-        #     raw (cao toc Town04) reward/buoc 13.47 -> V ~ 1338
-        #     normalized           reward/buoc  0.90 -> V ~   89
-        # Q nho di 15 lan thi cung mot alpha co anh huong tuong doi lon gap 15 lan. 0.1 duoc
-        # chon cho thang raw; giu nguyen o thang moi se bien nhung update dau thanh mot lenh
-        # "tang entropy" ap dao — dung the that bai ma 1.0 da gay ra truoc do, chi la o muc
-        # nhe hon. 0.007 giu dung ti le cu; lam tron 0.01.
-        "init_alpha": 0.01,
-        # He so rang buoc BC (TD3+BC). 0 = tat, SAC thuan. Xem sac/sac_agent.py.__init__:
-        # SAC thieu vung tin cay ma PPO co, nen warm-start tu policy IL bi xoa trong vai
-        # tram gradient step du actor_lr da ha xuong 1e-5. 2.5 la gia tri TD3+BC dung trong
-        # bai goc; vi lambda duoc chuan hoa theo |Q| nen no khong phu thuoc thang reward.
-        # Chuan hoa sai so BC theo tung chieu (xem sac/sac_agent.py.__init__). None = dung
-        # `action_std` cua checkpoint IL. Khong co no, rang buoc len chieu LAI bi sai so GA
-        # nuot mat vi hai chieu chenh 30 lan ve bien do.
-        "bc_action_scale": None,
-        "bc_coef": 2.5,
-        # Dong bang `log_std_head` -> nhieu tham do co dinh tai `action_std` cua IL, doc lap
-        # trang thai, dung nhu PPO. Xem sac/sac_agent.py.__init__ de biet so do dan toi lua
-        # chon nay. Dat False de quay ve SAC chuan (log_std hoc duoc, phu thuoc trang thai).
-        # False: smoke5 do duoc dong bang log_std lam troi chieu LAI xau di (0.0103 ->
-        # 0.0275 tren quan sat that) va va cham tang 88% -> 93% so voi smoke4.
-        "freeze_log_std": False,
-        # So GRADIENT STEP dau CHI train critic (actor + alpha dong bang) — doi xung voi
-        # `critic_warmup_updates` cua PPO. Voi train_freq=4, 2000 gradient step = 8000 env
-        # step (~6.7 phut mo phong), tuc 13% ngan sach 60k. PPO danh 10/195 update cho viec
-        # nay. Dat ve 0 neu muon doi chung khong co warmup.
-        "critic_warmup_steps": 2000,
-        # Ti le buoc lay hanh dong NGAU NHIEN TOAN DAI trong giai doan critic-warmup, de
-        # critic co du lieu hoc su phu thuoc hanh dong cua Q. Chi hoat dong khi actor con
-        # dong bang nen khong the pha warm-start. Xem chu thich trong train_sac.py.
-        "explore_epsilon": 0.25,
-        "log_std_init": -2.5,
-        # batch_size / train_freq / total_steps duoc chon theo DO DUOC tren GTX 1650 Max-Q
-        # 4 GB (may dang dung), khong phai theo mac dinh sach vo. Mot gradient step SAC
-        # (actor sample + 2 critic + 2 target critic + 1 luot critic nua cho actor loss,
-        # tren anh one-hot 4 lop 240x192) do duoc:
-        #     batch 128 -> 3.920 s, VRAM dinh 2.36 GB
-        #     batch  64 -> 1.969 s, VRAM dinh 1.19 GB
-        #     batch  32 -> 0.980 s, VRAM dinh 0.60 GB
-        # (Do lai cuoi phien; lan do dau phien nhanh gap 2.4 lan — 1.614/0.815/0.411 s — khi
-        # may con it tai nen. GPU khong throttle o ca hai lan, xung van 1740/1740 MHz; khac
-        # biet den tu cac tien trinh nen tranh GPU. Lay so CHAM lam co so de uoc tinh.)
-        # batch 32 + train_freq 4 xu ly cung so mau nhu batch 64 + train_freq 8, nhung gap
-        # DOI so buoc toi uu hoa. Voi SAC, nhieu buoc gradient nhieu hon thuong tot hon it
-        # buoc muot hon. 0.60 GB VRAM cung an toan hon nhieu canh CARLA tren card 4 GB.
-        # Voi train_freq=1 (mac dinh SAC chuan, 1 gradient step moi env step), vong lap bi
-        # GHIM o 0.62 step/s — khong phai toc do CARLA (~20 quyet dinh/s) ma la toc do
-        # gradient. 100k step se mat 45 GIO, va 2.36 GB VRAM canh CARLA server tren card
-        # 4 GB thi gan nhu chac chan OOM.
-        #     batch 32 + train_freq 4 + 60k step:
-        #         15 000 gradient step x 0.980 s = 4.1 h
-        #         + 60 000 / 20 quyet dinh/s     = 0.8 h  -> ~4.9 h, cong ~20% nap ban do
-        #         khi xoay 4 town -> ~5.9 h. VRAM 0.60 GB.
-        # Danh doi: UTD (update-to-data) = 0.25 thay vi 1.0, tuc moi mau duoc hoc it hon.
-        # Chap nhan duoc o day vi actor da warm-start tu IL, khong phai hoc lai tu con so 0.
-        # Neu doi sang GPU khoe hon: ha train_freq ve 1-2 va tang total_steps.
-        "batch_size": 32, "buffer_capacity": 50000,
-        "learning_starts": 2000, "train_freq": 4, "gradient_steps": 1,
-        "max_grad_norm": 0.5,
-        # 60k quyet dinh x 0.2s = 3.3 gio mo phong.
-        "total_steps": 60000, "save_every_steps": 5000,
-        "eval_every_steps": 10000, "eval_episodes": 30,
-    },
+SAC_DEFAULTS = {
+    "output": "./runs/sac_lane_keep",
+    # actor_lr THAP hon critic_lr 10 lan, cung ly do va cung ti le nhu PPO
+    # (xem ../drl_training/ppo/ppo_agent.py.__init__): actor da warm-start tu IL, critic khoi
+    # tao ngau nhien. Cho ca hai cung mot LR nghia la xoa trong so IL bang gradient sinh
+    # ra tu mot ham gia tri chua hoc duoc gi.
+    #
+    # 3e-4 (ban dau, lay tu mac dinh SAC sach) la QUA CAO o day: SAC lam
+    # 60000/train_freq 4 = 15 000 gradient step, tuong duong 195 update x 80 minibatch =
+    # 15 600 cua PPO. Cung so buoc cap nhat ma LR cao gap 15 lan PPO (2e-5) nghia la
+    # actor dich chuyen gap 15 lan — dung co che da pha hong warm-start o runs/ppo_v2/v3.
+    # 1e-5, thap hon ca PPO (2e-5), va co ly do cau truc chu khong phai tuy tien:
+    # PPO co VUNG TIN CAY — `clip_range` 0.2 chan ti so importance sampling va
+    # `target_kl` cat epoch som — nen policy khong the nhay xa trong mot update du
+    # gradient lon co nao. SAC khong co gi tuong duong: `actor_loss = alpha*log_prob -
+    # min_Q` duoc toi uu tu do. Cong them Adam chuan hoa do lon gradient (moi tham so
+    # dich ~lr moi buoc bat ke gradient nho hay lon), nen mot huong gradient NHAT QUAN
+    # tu mot critic con vo nghia se tich luy rat nhanh.
+    # Do duoc tren runs/sac_v2_smoke2 voi actor_lr 3e-5: chi 650 buoc actor da lam lenh
+    # lai xac dinh troi tu -0.001 sang -0.274 va lenh ga tu +0.288 sang -0.372.
+    "actor_lr": 1e-5, "critic_lr": 3e-4, "alpha_lr": 3e-4,
+    "tau": 0.005,
+    # gamma 0.95 RIENG cho SAC, ghi de gia tri 0.99 o ENV_DEFAULTS.
+    #
+    # Ly do la ti le giua mot hanh dong va chan troi. Moi hanh dong keo dai 0.2s
+    # (`action_repeat` 4). Voi gamma 0.99, chan troi hieu dung ~1/(1-g) = 100 buoc =
+    # 20 giay, nen MOT hanh dong chiem 1% chan troi — va policy con tu sua o cac buoc
+    # sau, nen hau qua dai han cua viec be lai mot nhip that su rat nho. Do la ly do
+    # `dQ/da` nho: khong phai critic hoc kem ma la tinh chat cua MDP nay.
+    #
+    # gamma 0.95 -> chan troi ~20 buoc = 4 giay. Mot hanh dong chiem 5% thay vi 1%, tuc
+    # tin hieu tang 5 lan. 4 giay van du dai cho bam lan: hau qua cua mot lenh lai the
+    # hien trong 1-3 giay. PPO khong can dieu nay vi GAE CONG DON hang chuc hanh dong
+    # doc quy dao thanh mot advantage du lon; SAC phai doc tin hieu tu MOT hanh dong.
+    "gamma": 0.95,
+    # CANH BAO (do duoc tren runs/sac_f, 6/9/2026): khi `freeze_log_std` = True thi
+    # `target_entropy` va `alpha_lr` la HAI NUT CHET. log_std bi dong bang nen policy khong
+    # the ha entropy xuong muc target; entropy thuc te dao quanh -2.6 trong khi target la
+    # -4.0, nen `alpha_loss` am lien tuc va alpha giam don dieu ve 0:
+    #     step  5000 -> 0.0100 | 20000 -> 0.0086 | 30000 -> 0.0039 | 35000 -> 0.0027
+    # O step 35000, alpha*log_prob ~ 0.007 tren thang min_Q ~ 21, tuc so hang entropy da tat
+    # han (0.03%). Nghia la voi freeze_log_std=True, thuat toan dang chay KHONG con la SAC
+    # chuan — no gan voi TD3+BC (twin-Q + actor Gaussian nhieu co dinh) hon. Khong gay hai
+    # (alpha di XUONG la chieu an toan; chieu nguoc lai chinh la thu da pha runs/sac_a),
+    # nhung phai noi dung nhu vay khi bao cao, va dung ky vong vao viec chinh hai nut nay.
+    # Muon auto-temperature that su hoat dong thi phai dat `freeze_log_std` = False.
+    #
+    # -action_dim = -2.0 (Haarnoja et al.) la mac dinh cho tac vu dieu khien tong quat.
+    # O day no qua CAO: entropy muc do dat buoc alpha giu do lech lon tren CHIEU STEER,
+    # trong khi lenh lai dien hinh chi 0.005-0.03. Ha xuong -4.0 cho phep policy nhon
+    # hon ma van con tham do o chieu longitudinal.
+    "target_entropy": -4.0,
+    # Nhu PPO: None = lay tu `action_std` cua checkpoint IL (lay trung binh log cua hai
+    # chieu, vi SAC dung mot `log_std_head` phu thuoc trang thai chu khong phai vector).
+    "log_std_init_from_checkpoint": True,
+    # alpha khoi tao (xem sac/sac_agent.py.__init__). `actor_loss = alpha*log_prob -
+    # min_Q`, nen gia tri dung phu thuoc THANG CUA Q, va thang do vua doi 15 lan khi
+    # reward chuyen sang "normalized":
+    #     raw (cao toc Town04) reward/buoc 13.47 -> V ~ 1338
+    #     normalized           reward/buoc  0.90 -> V ~   89
+    # Q nho di 15 lan thi cung mot alpha co anh huong tuong doi lon gap 15 lan. 0.1 duoc
+    # chon cho thang raw; giu nguyen o thang moi se bien nhung update dau thanh mot lenh
+    # "tang entropy" ap dao — dung the that bai ma 1.0 da gay ra truoc do, chi la o muc
+    # nhe hon. 0.007 giu dung ti le cu; lam tron 0.01.
+    "init_alpha": 0.01,
+    # He so rang buoc BC (TD3+BC). 0 = tat, SAC thuan. Xem sac/sac_agent.py.__init__:
+    # SAC thieu vung tin cay ma PPO co, nen warm-start tu policy IL bi xoa trong vai
+    # tram gradient step du actor_lr da ha xuong 1e-5. 2.5 la gia tri TD3+BC dung trong
+    # bai goc; vi lambda duoc chuan hoa theo |Q| nen no khong phu thuoc thang reward.
+    # Chuan hoa sai so BC theo tung chieu (xem sac/sac_agent.py.__init__). None = dung
+    # `action_std` cua checkpoint IL. Khong co no, rang buoc len chieu LAI bi sai so GA
+    # nuot mat vi hai chieu chenh 30 lan ve bien do.
+    "bc_action_scale": None,
+    "bc_coef": 2.5,
+    # Dong bang `log_std_head` -> nhieu tham do co dinh tai `action_std` cua IL, doc lap
+    # trang thai, dung nhu PPO. Xem sac/sac_agent.py.__init__ de biet so do dan toi lua
+    # chon nay. Dat False de quay ve SAC chuan (log_std hoc duoc, phu thuoc trang thai).
+    # False: smoke5 do duoc dong bang log_std lam troi chieu LAI xau di (0.0103 ->
+    # 0.0275 tren quan sat that) va va cham tang 88% -> 93% so voi smoke4.
+    "freeze_log_std": False,
+    # So GRADIENT STEP dau CHI train critic (actor + alpha dong bang) — doi xung voi
+    # `critic_warmup_updates` cua PPO. Voi train_freq=4, 2000 gradient step = 8000 env
+    # step (~6.7 phut mo phong), tuc 13% ngan sach 60k. PPO danh 10/195 update cho viec
+    # nay. Dat ve 0 neu muon doi chung khong co warmup.
+    "critic_warmup_steps": 2000,
+    # Ti le buoc lay hanh dong NGAU NHIEN TOAN DAI trong giai doan critic-warmup, de
+    # critic co du lieu hoc su phu thuoc hanh dong cua Q. Chi hoat dong khi actor con
+    # dong bang nen khong the pha warm-start. Xem chu thich trong train_sac.py.
+    "explore_epsilon": 0.25,
+    "log_std_init": -2.5,
+    # batch_size / train_freq / total_steps duoc chon theo DO DUOC tren GTX 1650 Max-Q
+    # 4 GB (may dang dung), khong phai theo mac dinh sach vo. Mot gradient step SAC
+    # (actor sample + 2 critic + 2 target critic + 1 luot critic nua cho actor loss,
+    # tren anh one-hot 4 lop 240x192) do duoc:
+    #     batch 128 -> 3.920 s, VRAM dinh 2.36 GB
+    #     batch  64 -> 1.969 s, VRAM dinh 1.19 GB
+    #     batch  32 -> 0.980 s, VRAM dinh 0.60 GB
+    # (Do lai cuoi phien; lan do dau phien nhanh gap 2.4 lan — 1.614/0.815/0.411 s — khi
+    # may con it tai nen. GPU khong throttle o ca hai lan, xung van 1740/1740 MHz; khac
+    # biet den tu cac tien trinh nen tranh GPU. Lay so CHAM lam co so de uoc tinh.)
+    # batch 32 + train_freq 4 xu ly cung so mau nhu batch 64 + train_freq 8, nhung gap
+    # DOI so buoc toi uu hoa. Voi SAC, nhieu buoc gradient nhieu hon thuong tot hon it
+    # buoc muot hon. 0.60 GB VRAM cung an toan hon nhieu canh CARLA tren card 4 GB.
+    # Voi train_freq=1 (mac dinh SAC chuan, 1 gradient step moi env step), vong lap bi
+    # GHIM o 0.62 step/s — khong phai toc do CARLA (~20 quyet dinh/s) ma la toc do
+    # gradient. 100k step se mat 45 GIO, va 2.36 GB VRAM canh CARLA server tren card
+    # 4 GB thi gan nhu chac chan OOM.
+    #     batch 32 + train_freq 4 + 60k step:
+    #         15 000 gradient step x 0.980 s = 4.1 h
+    #         + 60 000 / 20 quyet dinh/s     = 0.8 h  -> ~4.9 h, cong ~20% nap ban do
+    #         khi xoay 4 town -> ~5.9 h. VRAM 0.60 GB.
+    # Danh doi: UTD (update-to-data) = 0.25 thay vi 1.0, tuc moi mau duoc hoc it hon.
+    # Chap nhan duoc o day vi actor da warm-start tu IL, khong phai hoc lai tu con so 0.
+    # Neu doi sang GPU khoe hon: ha train_freq ve 1-2 va tang total_steps.
+    # n-step return. 1 = SAC chuan (1-step TD). Xem sac/replay_buffer.py de biet ly do va
+    # danh doi; tom tat: do nhay hanh dong cua critic bao hoa o 8-10% tu step 25 000 tren ca
+    # runs/sac_d lan runs/sac_f, va actor chi hoc qua dQ/da nen do la tran cua thuat toan.
+    # n-step gop n phan thuong THUC TE vao muc tieu — dung co che GAE cua PPO — nen tin hieu
+    # ve hanh dong dau tien manh len ma chan troi hieu dung khong ngan lai.
+    "n_step": 1,
+    "batch_size": 32, "buffer_capacity": 50000,
+    "learning_starts": 2000, "train_freq": 4, "gradient_steps": 1,
+    "max_grad_norm": 0.5,
+    # 60k quyet dinh x 0.2s = 3.3 gio mo phong.
+    "total_steps": 60000, "save_every_steps": 5000,
+    "eval_every_steps": 10000, "eval_episodes": 30,
 }
 
 
@@ -289,23 +284,11 @@ def _flatten(data, output=None):
     return output
 
 
-def peek_algorithm(argv=None, default="ppo"):
-    """Lightweight pre-parse used by `evaluate.py`, which doesn't know which algorithm's
-    defaults to load until it has read `--algorithm` off the command line — same
-    two-pass-parse trick as `data_collection/carla_collector/config.py`'s `--config`
-    pre-parser."""
-    pre_parser = argparse.ArgumentParser(add_help=False)
-    pre_parser.add_argument("--algorithm", default=default, choices=list(ALGO_DEFAULTS))
-    known, _ = pre_parser.parse_known_args(argv)
-    return known.algorithm
-
-
-def load_config(algorithm, argv=None):
-    if algorithm not in ALGO_DEFAULTS:
-        raise ValueError("algorithm phai la %s, nhan duoc '%s'." % (list(ALGO_DEFAULTS), algorithm))
-
-    parser = argparse.ArgumentParser(description="DRL fine-tuning (%s) cho lane-keeping tren CARLA" % algorithm.upper())
-    parser.add_argument("--config", default=None, help="File JSON cau hinh, vd %s_config.json" % algorithm)
+def load_config(argv=None):
+    parser = argparse.ArgumentParser(
+        description="SAC (off-policy) fine-tuning cho lane-keeping tren CARLA")
+    parser.add_argument("--config", default=None,
+                        help="File JSON cau hinh, vd sac_config.json")
     parser.add_argument("--host", default=None)
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--il-checkpoint", default=None, help="Checkpoint IL (.pth) de warm-start actor")
@@ -336,7 +319,6 @@ def load_config(algorithm, argv=None):
                          help="Seed cho RNG chon diem spawn cua env. Doi gia tri nay giua "
                               "cac phien train noi tiep nhau, neu khong moi phien se gap y "
                               "het mot chuoi kich ban")
-    parser.add_argument("--n-steps", type=int, default=None, help="[train_ppo.py] so buoc moi rollout/update")
     parser.add_argument("--buffer-capacity", type=int, default=None,
                          help="[train_sac.py] so transition toi da trong replay buffer — "
                               "giam gia tri nay truoc tien neu thieu RAM (xem README.md)")
@@ -356,21 +338,19 @@ def load_config(algorithm, argv=None):
     parser.add_argument("--episodes", type=int, default=None, help="[evaluate.py] so episode danh gia")
     parser.add_argument("--deterministic", action="store_true",
                          help="[evaluate.py] dung mean action thay vi sample (tat exploration)")
-    parser.add_argument("--algorithm", default=None, choices=["ppo", "sac"],
-                         help="[evaluate.py] thuat toan cua checkpoint --resume")
     parser.add_argument("--eval-csv-out", default=None,
                          help="[evaluate.py] neu dat, ghi ket qua tung episode ra file CSV nay "
-                              "(vd runs/ppo_lane_keep/eval_results.csv) de plot_metrics.py doc lai")
+                              "(vd runs/sac_f/eval_Town05.csv)")
     args = parser.parse_args(argv)
 
-    config = dict(COMMON_DEFAULTS)
-    config.update(ALGO_DEFAULTS[algorithm])
+    config = dict(ENV_DEFAULTS)
+    config.update(SAC_DEFAULTS)
     if args.config:
         path = Path(args.config).expanduser().resolve()
         with path.open("r", encoding="utf-8") as handle:
             config.update(_flatten(json.load(handle)))
 
-    for key in ("host", "port", "il_checkpoint", "output", "total_steps", "n_steps",
+    for key in ("host", "port", "il_checkpoint", "output", "total_steps",
                 "buffer_capacity", "width", "height", "obs_width", "obs_height",
                 "batch_size", "device", "action_repeat", "max_episode_steps", "town", "seed"):
         value = getattr(args, key, None)
@@ -390,6 +370,5 @@ def load_config(algorithm, argv=None):
     config["_resume"] = args.resume
     config["_episodes"] = args.episodes
     config["_deterministic"] = args.deterministic
-    config["_algorithm"] = args.algorithm or algorithm
     config["_eval_csv_out"] = args.eval_csv_out
     return config

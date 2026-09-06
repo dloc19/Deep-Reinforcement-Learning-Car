@@ -112,7 +112,7 @@ class ObservationContract(object):
             raise ValueError("norm_stats trong checkpoint thieu cot: %s" % missing_stats)
 
         # Chot chan cho loi IM LANG nguy hiem nhat cua pipeline nay: checkpoint IL cu (vd
-        # ban 6 lop co Vehicle/Sky) van nap duoc vi train_ppo.py dung
+        # ban 6 lop co Vehicle/Sky) van nap duoc vi train_sac.py dung
         # `contract.num_classes` de dung backbone. Shape khop het, khong gi bao loi, nhung
         # resize_class_map() o duoi lai sinh chi so theo bang 4 lop hien tai -> actor nhan
         # sai kenh va lai sai. Fail ngay tai day, voi thong bao noi ro phai train lai gi.

@@ -1,4 +1,4 @@
-"""Tiny CSV logger, shared by `train_ppo.py`, `train_sac.py` and `evaluate.py` so metrics
+"""Tiny CSV logger, shared by `train_sac.py` and `evaluate.py` so metrics
 land in a consistent shape regardless of algorithm — convenient for plotting later.
 """
 
@@ -8,12 +8,12 @@ from pathlib import Path
 
 class CsvLogger(object):
     def __init__(self, path, fieldnames, mode="a"):
-        """`mode="a"` (default, dung cho train_ppo.py/train_sac.py): noi tiep vao file cu
+        """`mode="a"` (default, dung cho train_sac.py): noi tiep vao file cu
         neu co — bat buoc de log khong bi mat khi resume training tu checkpoint giua chung.
         `mode="w"`: LUON ghi de file cu tu dau — dung cho evaluate.py, vi moi lan chay la
         MOT lo danh gia doc lap (N episode tren MOT checkpoint); noi tiep vao file cu se
         am tham tron episode cua nhieu lan danh gia khac nhau thanh 1 "run" khi ve bieu do
-        (xem plot_metrics.py::plot_eval_comparison)."""
+        (xem ../drl_training/plot_metrics.py::plot_eval_comparison)."""
         if mode not in ("a", "w"):
             raise ValueError("mode phai la 'a' hoac 'w', nhan duoc '%r'" % mode)
         self.path = Path(path)

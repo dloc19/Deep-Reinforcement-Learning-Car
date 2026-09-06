@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import load_config                                    # noqa: E402
 from policy.checkpoint_io import load_il_checkpoint                # noqa: E402
 from policy.observation import ObservationContract                # noqa: E402
-from policy.actor_critic import GaussianActor, load_il_actor_weights  # noqa: E402
+from sac.networks import GaussianPolicy, load_il_actor_weights       # noqa: E402
 from policy.backbone import freeze_batchnorm                      # noqa: E402
 from envs.carla_lane_keep_env import CarlaLaneKeepEnv             # noqa: E402
 from train_sac import resolve_target_speed                        # noqa: E402
@@ -29,7 +29,7 @@ def main():
     n_target = int(sys.argv[1]) if len(sys.argv) > 1 else 256
     towns = sys.argv[2].split(",") if len(sys.argv) > 2 else ["Town01", "Town04"]
 
-    cfg = load_config("sac", ["--config", "sac_config_v2.json"])
+    cfg = load_config(["--config", "sac_config.json"])
     cfg["town"] = towns
     cfg["town_rotate_episodes"] = 3
     cfg["max_episode_steps"] = 200
@@ -37,7 +37,8 @@ def main():
     contract = ObservationContract(ck)
     cfg["target_speed_mps"] = resolve_target_speed(cfg, contract)
 
-    actor = GaussianActor(contract.scalar_feature_dim, contract.num_classes)
+    actor = GaussianPolicy(contract.scalar_feature_dim, contract.num_classes,
+                           log_std_init=list(contract.default_log_std()))
     load_il_actor_weights(actor, ck)
     freeze_batchnorm(actor)
     actor.eval()

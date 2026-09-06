@@ -49,7 +49,7 @@ class SACAgent(object):
         self.log_alpha = torch.tensor([math.log(init_alpha)], requires_grad=True, device=device)
         self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=config.get("alpha_lr", 3e-4))
 
-        # Doi xung voi `critic_warmup_updates` cua PPO (xem ppo/ppo_agent.py): trong N
+        # Doi xung voi `critic_warmup_updates` cua PPO (../drl_training/ppo/ppo_agent.py): trong N
         # gradient step dau, CHI critic duoc hoc. Khong co no thi actor bat dau di chuyen
         # theo mot ham Q hoan toan ngau nhien — cung mot van de ma PPO da phai xu ly, va o
         # SAC no con nang hon vi actor duoc cap nhat MOI env step chu khong phai moi rollout.
@@ -166,7 +166,13 @@ class SACAgent(object):
             next_action, next_log_prob, _mean = self.actor.sample(next_seg, next_scalar)
             target_q1, target_q2 = self.critic_target(next_seg, next_scalar, next_action)
             target_q = torch.min(target_q1, target_q2) - self.alpha.detach() * next_log_prob
-            y = reward + self.gamma * (1.0 - done) * target_q
+            # `gamma_n` = gamma^k voi k la SO BUOC that su cong don duoc (xem
+            # sac/replay_buffer.py::_rollout). Voi n_step=1 no bang gamma o moi phan tu, nen
+            # duong nay trung khit ban 1-step cu. Buffer cu (khong co khoa nay) van chay.
+            discount = batch.get("gamma_n")
+            if discount is None:
+                discount = self.gamma
+            y = reward + discount * (1.0 - done) * target_q
 
         q1, q2 = self.critic(seg, scalar, action)
         critic_loss = F.mse_loss(q1, y) + F.mse_loss(q2, y)

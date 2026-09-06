@@ -1,16 +1,16 @@
-"""SAC fine-tuning entrypoint — warm-starts the actor from an IL checkpoint and fine-tunes
-against a live CARLA server using an off-policy replay buffer. See `train_ppo.py` for the
-on-policy alternative and `README.md` for when to pick which.
+"""SAC (off-policy) fine-tuning entrypoint — warm-start actor tu checkpoint IL roi fine-tune
+tren mot CARLA server dang song, dung replay buffer.
 
-Usage (same terminal layout as `train_ppo.py` — see its docstring for the full walkthrough):
+Day la entrypoint DUY NHAT cua thu muc nay. Ban PPO (on-policy) nam o `../drl_training/`.
+
+Chay:
+    # 1. smoke test 8k step truoc (~15 phut), kiem tra ket noi/reward/log
+    python train_sac.py --config sac_config_smoke.json
+    # 2. lan train that 60k step (~6 gio)
     python train_sac.py --config sac_config.json
 
-Same ACTIVE-client caveat as `train_ppo.py`: do not run alongside `data_collection/` or
-`automatic_control.py` against the same CARLA world.
-
-I could not run this against a live CARLA server myself while writing it (no CARLA/Python in
-this environment) — treat the first run as a smoke test with a small `--total-steps` and
-`learning_starts` (edit `sac_config.json`) before a long run.
+CANH BAO ACTIVE CLIENT: script nay dieu khien world o che do dong bo (sync mode). Khong chay
+song song voi `data_collection/` hay `automatic_control.py` tren cung mot CARLA world.
 """
 
 import sys
@@ -68,7 +68,7 @@ def save_checkpoint(path, agent, step, config, contract):
 
 
 def main():
-    config = load_config("sac")
+    config = load_config()
     output_dir = Path(config["output"]).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -145,7 +145,12 @@ def main():
 
     obs_h = config.get("obs_height", config["height"])
     obs_w = config.get("obs_width", config["width"])
-    buffer = ReplayBuffer(config["buffer_capacity"], (obs_h, obs_w), contract.scalar_feature_dim, 2, device)
+    n_step = int(config.get("n_step", 1))
+    buffer = ReplayBuffer(config["buffer_capacity"], (obs_h, obs_w), contract.scalar_feature_dim, 2,
+                          device, n_step=n_step, gamma=config["gamma"])
+    if n_step > 1:
+        print("n-step return: n=%d (chan troi hieu dung giu nguyen, tin hieu ve hanh dong "
+              "dau tien manh len — xem sac/replay_buffer.py)" % n_step)
     if global_step > 0:
         # Resume: buffer KHONG nam trong checkpoint (no la 1.4-2.3 GB, xem README). Nen sau
         # moi lan resume, SAC phai nap lai `learning_starts` transition truoc khi hoc tiep —
@@ -158,7 +163,6 @@ def main():
         config["buffer_capacity"], obs_h, obs_w,
         config["buffer_capacity"] * obs_h * obs_w / (1024.0 ** 3)))
 
-    # Xem chu thich cung cho trong train_ppo.py.
     episode_log = CsvLogger(output_dir / "episode_log.csv",
                              ["step", "episode_reward", "episode_len",
                               "terminate_reason"] + _EPISODE_FIELDS_EXTRA)

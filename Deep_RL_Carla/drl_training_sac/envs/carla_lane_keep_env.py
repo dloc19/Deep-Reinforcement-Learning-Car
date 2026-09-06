@@ -64,7 +64,7 @@ class CarlaLaneKeepEnv(object):
     later (on a newer Python + a rebuilt CARLA wheel) is a thin shim, not a rewrite.
 
     `observation_contract` (a `policy.observation.ObservationContract`, built once from the
-    IL checkpoint in `train_ppo.py`) is required: it is the single source of truth for how
+    IL checkpoint in `train_sac.py`) is required: it is the single source of truth for how
     raw CARLA state turns into the scalar feature vector, shared with the actor/critic that
     consume this env's observations.
     """
@@ -129,7 +129,7 @@ class CarlaLaneKeepEnv(object):
     def _load_town(self, town):
         """Nap ban do neu `town` co dat va khac ban do dang chay.
 
-        O day chu khong o tung entrypoint: train_ppo.py, train_sac.py, evaluate.py va
+        O day chu khong o tung entrypoint: train_sac.py, evaluate.py va
         demo_il.py deu dung env nay, nen chi can mot ban cai dat. Bo qua khi ban do da
         dung — `load_world()` dung lai TOAN BO the gioi, dat tien va khong can thiet.
         """
@@ -390,7 +390,7 @@ class CarlaLaneKeepEnv(object):
             print("Doi ban do -> %s (sau %d episode)" % (rotated, self.town_rotate_episodes))
         self._episodes_on_town += 1
         self._spawn_actors()
-        # Thong ke lech lan cua episode — de train_ppo.py/train_sac.py ghi vao episode_log.csv.
+        # Thong ke lech lan cua episode — de train_sac.py ghi vao episode_log.csv.
         # Truoc day chi `evaluate.py` do dai luong nay, nen mot lan train nham vao viec cai
         # thien bam lan (vd tang w_lane_offset) khong the theo doi duoc gi cho toi tan buoc
         # eval cuoi cung. Tach rieng "tren duong thuong" vi trong nga tu `lane_offset_m` la
