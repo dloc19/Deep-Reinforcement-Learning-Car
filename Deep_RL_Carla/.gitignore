@@ -24,3 +24,6 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+# --- Ban sao cach ly de nghien cuu SAC (runs/ nang, giu tren dia, khong commit) ---
+Deep_RL_Carla/drl_training_sac/runs/
