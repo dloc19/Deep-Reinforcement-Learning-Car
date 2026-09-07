@@ -437,7 +437,7 @@ khôi phục gián tiếp qua tương quan giữa các kênh.
 
 `(4, 6)` giữ lại bố cục thô: 4 hàng (gần → xa) × 6 cột (trái → phải), tức `cnn_fc` nhận 1536
 chiều thay vì 64. Đây là thay đổi kiến trúc quan trọng nhất giữa phiên bản v4 và v9 của
-pipeline. Hằng số này **phải khớp** giữa `train_il_v9.ipynb` và `policy/backbone.py`; lệch
+pipeline. Hằng số này **phải khớp** giữa `train_il.ipynb` và `policy/backbone.py`; lệch
 một bên sẽ khiến `il_compat.load_matching` báo lỗi shape ngay tại `cnn_fc.0.weight` — cố ý để
 như vậy, vì đây chính xác là loại lệch phải chết to chứ không được chạy im lặng.
 

@@ -4,7 +4,7 @@ Man hinh Live Drive phai ve DUNG bo nhan ma model dang nhin, chu khong phai bo n
 dinh cua CARLA. Du an nay gap 23 raw tag cua CARLA xuong 4 lop
 (`Background / Road / RoadLine / Sidewalk`, xem `SEG_CLASS_NAMES` trong
 `data_collection/carla_collector/schema.py`), va CA BA noi dung anh segmentation deu theo
-bang do: `train-seg.ipynb`, `train_il_v9.ipynb`, va `policy/observation.py::resize_class_map`
+bang do: `train-segment-lane.ipynb`, `train_il.ipynb`, va `policy/observation.py::resize_class_map`
 — tuc chinh cai ma IL/DRL Autopilot an vao model moi tick.
 
 Truoc day bridge lai ve kenh nay bang `carla.ColorConverter.CityScapesPalette`, tuc bang mau
