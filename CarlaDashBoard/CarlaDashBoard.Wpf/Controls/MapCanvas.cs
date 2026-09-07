@@ -123,7 +123,16 @@ public sealed class MapCanvas : FrameworkElement
     }
 
     /// <summary>World (CARLA x/y, metres) -> screen pixels: fit `_worldBounds` into the
-    /// current render size with a margin, flip Y so the map reads "north-up".</summary>
+    /// current render size with a margin, keeping CARLA's own top-down orientation.
+    ///
+    /// KHONG lat truc Y. CARLA dung he toa do THUAN TAY TRAI (+X truoc, +Y phai, +Z len),
+    /// nen nhin tu tren xuong voi +X sang phai thi +Y di XUONG man hinh — dung bang y het
+    /// `world_to_pixel()` trong `no_rendering_mode.py` cua chinh CARLA (no map thang
+    /// `location.y` vao pixel y, khong doi dau), va do cung la huong cua moi anh ban do
+    /// Town0x chinh thuc. Ban truoc nhan `-scale` vao Y "cho doc north-up": ket qua la ca
+    /// thi tran bi LAT GUONG. Doi chieu Town03: buc xuyen tam o giua thi van dung cho, nhung
+    /// nhanh cut (cul-de-sac) le ra o goc duoi-phai lai nhay len goc tren-phai, va moi khuc
+    /// re trong tuyen A* hien ra nguoc ben so voi luc lai that.</summary>
     private Matrix ComputeWorldToScreen()
     {
         if (_worldBounds.IsEmpty || ActualWidth <= 1 || ActualHeight <= 1)
@@ -136,7 +145,7 @@ public sealed class MapCanvas : FrameworkElement
 
         var m = Matrix.Identity;
         m.Translate(-(_worldBounds.X + _worldBounds.Width / 2), -(_worldBounds.Y + _worldBounds.Height / 2));
-        m.Scale(scale, -scale);
+        m.Scale(scale, scale);
         m.Translate(ActualWidth / 2, ActualHeight / 2);
         return m;
     }

@@ -59,6 +59,12 @@ public sealed partial class RouteMapViewModel : ObservableObject
                     .Select(p => new WorldPoint(p.GetProperty("x").GetDouble(), p.GetProperty("y").GetDouble()))
                     .ToList();
                 RoutePolyline = polyline;
+                // Ghim lai diem den vao node CUOI CUNG cua tuyen, khong giu diem tho nguoi
+                // dung bam. A* bat diem den ve node gan nhat tren do thi duong; neu cu ve
+                // toa do da bam thi cham do se nam giua block nha, roi khoi tuyen, trong
+                // nhu ban do ve sai — trong khi xe se dung o cuoi tuyen chu khong phai o do.
+                if (polyline.Count > 0)
+                    DestinationPosition = polyline[^1];
                 RouteDistanceM = e.Payload.GetProperty("distance_m").GetDouble();
                 RouteEtaS = e.Payload.GetProperty("eta_s").GetDouble();
                 HasRoute = true;
@@ -67,12 +73,39 @@ public sealed partial class RouteMapViewModel : ObservableObject
             case "RouteCompleted":
                 StatusMessage = "Xe đã tới đích.";
                 break;
+            // Xe moi = tuyen cu het hieu luc. Bridge Server da bo `route_context` cua no khi
+            // spawn lai xe (sim_loop._cmd_StartSession), nen neu man hinh nay van ve tuyen va
+            // cham dich cu thi hai ben noi hai chuyen khac nhau — nguoi dung nhin thay mot
+            // tuyen ma server khong con biet gi ve no.
+            case "SessionStarted":
+            case "SessionStopped":
+                RoutePolyline = null;
+                DestinationPosition = null;
+                HasRoute = false;
+                StatusMessage = e.Type == "SessionStarted"
+                    ? "Đã có xe mới — chọn điểm đến để tính tuyến."
+                    : "Đã dừng phiên.";
+                break;
             case "TownChanged":
                 var town = e.Payload.GetProperty("town").GetString() ?? "";
                 RoutePolyline = null;
                 HasRoute = false;
                 DestinationPosition = null;
                 _ = LoadGraphAsync(town);
+                break;
+            // CARLA khoi dong lai: do thi cu, tuyen cu va xe cu deu thuoc ve mot world da
+            // khong con. Bridge Server tu nap lai do thi, phia nay phai tai lai /maps va bo
+            // tuyen dang ve.
+            case "CarlaReconnected":
+                RoutePolyline = null;
+                DestinationPosition = null;
+                CarPosition = null;
+                HasRoute = false;
+                _graphTown = "";
+                _mapData.ClearCache();
+                var reconnectedTown = e.Payload.GetProperty("town").GetString() ?? "";
+                StatusMessage = "Đã nối lại CARLA — đang tải lại bản đồ…";
+                _ = LoadGraphAsync(reconnectedTown);
                 break;
             case "Error":
                 StatusMessage = $"Lỗi: {e.Payload.GetProperty("message").GetString()}";

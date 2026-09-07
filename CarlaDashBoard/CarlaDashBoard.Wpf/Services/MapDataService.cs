@@ -16,6 +16,10 @@ public sealed class MapDataService
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
     private readonly Dictionary<string, MapGraph> _cache = new();
 
+    /// <summary>Bỏ đồ thị đã cache. Gọi khi Bridge Server báo nó vừa nối lại CARLA: đồ thị
+    /// cũ được dựng từ một world đã không còn, và bản đồ đang load có thể đã khác.</summary>
+    public void ClearCache() => _cache.Clear();
+
     public async Task<MapGraph> GetGraphAsync(string host, int port, string town, CancellationToken ct = default)
     {
         if (_cache.TryGetValue(town, out var cached))

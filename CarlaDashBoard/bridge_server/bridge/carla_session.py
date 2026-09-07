@@ -12,7 +12,7 @@ import time
 import carla
 import numpy as np
 
-from . import cameras
+from . import cameras, seg_palette
 
 logger = logging.getLogger("bridge.carla_session")
 
@@ -29,9 +29,13 @@ class CarlaSession:
         self.seg_sensor = None
         self._original_settings = None
         self.last_rgb_jpeg = None
-        self.last_seg_jpeg = None
+        self.last_seg_image = None
         self.last_seg_class_map = None   # (H, W) uint8 raw class-id map — IL/DRL Autopilot input
         self._last_seg_publish = 0.0
+        # Bang mau 4 lop cua du an (Background/Road/RoadLine/Sidewalk) — dung cho kenh
+        # segmentation tren Live Drive de nguoi xem thay DUNG thu model nhin. Nap mot lan.
+        self.seg_color_lut, self.seg_class_names = seg_palette.load_color_lut(
+            cfg.deep_rl_carla_root)
 
     # ---------------------------------------------------------------- connect
     def connect(self):
@@ -43,8 +47,48 @@ class CarlaSession:
             self.load_town(self.cfg.town)
         else:
             self._enable_synchronous_mode()
+        # Ha timeout xuong muc "vong lap thuong" sau khi da noi/load xong — xem chu thich
+        # cua carla_tick_timeout_s trong config.py.
+        self.client.set_timeout(self.cfg.carla_tick_timeout_s)
         logger.info("Connected to CARLA %s:%d | map=%s",
                     self.cfg.carla_host, self.cfg.carla_port, self.map.name)
+
+    def simulator_reachable(self, timeout_s=2.0):
+        """CarlaUE4 con song khong? Hoi bang mot lenh RPC re nhat co, voi timeout NGAN.
+
+        Can rieng ham nay vi `world.tick()` dung `carla_tick_timeout_s`: mot lan tick hong
+        da ngon may giay, nen lay "tick hong N lan lien tiep" lam dau hieu mat ket noi thi
+        phai cho rat lau moi ket luan duoc. Mot lan hoi 2 giay o day tra loi ngay.
+
+        Luon hoi bang mot `carla.Client` MOI TINH, khong dung lai `self.client`. Khi
+        CarlaUE4 chet, socket RPC ben trong client cu hong han: no khong tu noi lai khi
+        CarlaUE4 bat len tro lai, nen hoi bang client cu thi cau tra loi mai mai la "chua
+        song" va Bridge Server se khong bao gio nhan ra CARLA da quay lai.
+        """
+        try:
+            probe = carla.Client(self.cfg.carla_host, self.cfg.carla_port)
+            probe.set_timeout(timeout_s)
+            probe.get_server_version()
+            return True
+        except Exception:
+            return False
+
+    def reconnect(self):
+        """Noi lai tu dau sau khi CarlaUE4 khoi dong lai.
+
+        Moi handle cu (world, map, ego, sensor) deu tro toi mot tien trinh khong con ton
+        tai, nen KHONG duoc goi destroy_*() len chung — chi vut di roi connect() lai. Cung
+        vi world cu da mat, `_original_settings` phai duoc quen di: settings can khoi phuc
+        luc shutdown() la settings cua world MOI.
+        """
+        self.ego = None
+        self.rgb_sensor = None
+        self.seg_sensor = None
+        self.last_rgb_jpeg = None
+        self.last_seg_image = None
+        self.last_seg_class_map = None
+        self._original_settings = None
+        self.connect()
 
     def _enable_synchronous_mode(self):
         settings = self.world.get_settings()
@@ -77,9 +121,14 @@ class CarlaSession:
     def load_town(self, town_name):
         self.destroy_cameras()
         self.destroy_ego()
-        self.world = self.client.load_world(town_name)
-        self.map = self.world.get_map()
-        self._enable_synchronous_mode()
+        # load_world() mat vai giay — nang timeout len muc "cham that" roi ha lai.
+        self.client.set_timeout(self.cfg.carla_timeout_s)
+        try:
+            self.world = self.client.load_world(town_name)
+            self.map = self.world.get_map()
+            self._enable_synchronous_mode()
+        finally:
+            self.client.set_timeout(self.cfg.carla_tick_timeout_s)
         logger.info("Loaded town %s", town_name)
 
     def set_weather(self, preset_name):
@@ -181,9 +230,15 @@ class CarlaSession:
         if now - self._last_seg_publish < 1.0 / self.cfg.publish_fps:
             return
         self._last_seg_publish = now
-        jpeg = cameras.segmentation_image_to_jpeg(image, self.cfg.jpeg_quality)
+        # Ve tu `last_seg_class_map` (raw tag) qua bang mau 4 lop cua du an. Chi khi khong
+        # nap duoc bang do moi quay ve CityScapesPalette cua CARLA — luc do anh hien thi se
+        # khac bo nhan model dung, va seg_palette.py da canh bao ro trong log.
+        if self.seg_color_lut is not None:
+            jpeg = cameras.class_map_to_png(self.last_seg_class_map, self.seg_color_lut)
+        else:
+            jpeg = cameras.segmentation_image_to_jpeg(image, self.cfg.jpeg_quality)
         if jpeg:
-            self.last_seg_jpeg = jpeg
+            self.last_seg_image = jpeg
             self.hub.publish_stream_binary(
                 protocol.encode_binary_frame(protocol.CHANNEL_SEG, jpeg))
 

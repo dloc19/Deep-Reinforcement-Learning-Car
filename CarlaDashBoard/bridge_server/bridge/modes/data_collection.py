@@ -163,6 +163,9 @@ class DataCollectionMode(ModeRuntime):
             if self.session.last_rgb_jpeg:
                 (self.session_dir / "rgb" / f"{snapshot.frame}.jpg").write_bytes(
                     self.session.last_rgb_jpeg)
-            if self.session.last_seg_jpeg:
-                (self.session_dir / "seg" / f"{snapshot.frame}.jpg").write_bytes(
-                    self.session.last_seg_jpeg)
+            # .png, khong phai .jpg: khung segmentation duoc ma hoa PNG (anh chi so lop 4
+            # mau — xem cameras.class_map_to_png). Ghi byte PNG vao file ten .jpg thi mo
+            # bang thu vien nao cung phai doan lai dinh dang.
+            if self.session.last_seg_image:
+                (self.session_dir / "seg" / f"{snapshot.frame}.png").write_bytes(
+                    self.session.last_seg_image)

@@ -41,6 +41,16 @@ class SimLoop:
         self.route_context = None                 # RouteContext from the last SetDestination
         self._route_completed_notified = False
 
+        # Doc san tren SIM THREAD de server.py._server_info_payload() (chay tren luong
+        # asyncio) khong phai goi vao API CARLA — xem chu thich o ham do.
+        self.spawn_points_cache = []              # list[dict] da san sang serialize
+        self.current_town_cache = ""
+
+        # --- Phat hien CarlaUE4 chet/khoi dong lai (xem _handle_tick_failure) ---
+        self._tick_failures = 0
+        self._carla_lost_notified = False
+        self._next_reconnect_at = 0.0
+
         # --- Phase 4: IL / DRL Autopilot (see il_drl_bridge.py, modes/learned_autopilot.py) ---
         self._drl_training = None                 # lazy-loaded drl_training namespace
         self._il_predictor_cache = None            # (checkpoint_path, contract, predict)
@@ -48,9 +58,21 @@ class SimLoop:
 
     def start(self):
         self.session.connect()
+        self._refresh_spawn_points()
         self._ensure_town_graph()  # build once up front so /maps/{town} works immediately
         self._thread = threading.Thread(target=self._run, name="sim-loop", daemon=True)
         self._thread.start()
+
+    def _refresh_spawn_points(self):
+        """Doc lai danh sach spawn point + ten town cua ban do dang load. Chi duoc goi tu
+        luong dieu khien CARLA (luc start(), va tu _cmd_SetTown tren sim thread)."""
+        self.current_town_cache = self.session.current_town_short()
+        spawn_points = self.session.map.get_spawn_points() if self.session.map else []
+        self.spawn_points_cache = [
+            {"index": i, "x": round(t.location.x, 1), "y": round(t.location.y, 1),
+             "yaw": round(t.rotation.yaw, 1)}
+            for i, t in enumerate(spawn_points)
+        ]
 
     def stop(self):
         self._stop.set()
@@ -84,28 +106,104 @@ class SimLoop:
             # Tut lai neu da tre nhieu hon mot tick (vd vua load town xong) — khong thi
             # vong lap se "duoi" cho kip bang mot loat tick lien tuc khong ghim.
             next_tick = max(next_tick + tick_interval, time.time() - tick_interval)
-            try:
-                self.session.world.tick()
-            except RuntimeError as exc:
-                logger.warning("world.tick() failed: %s", exc)
-                time.sleep(0.5)
-                continue
-            snapshot = self.session.world.get_snapshot()
-
-            if self.current_mode is not None and self.session.ego is not None:
+            if self._carla_lost_notified:
+                # Da biet CARLA mat roi thi DUNG goi world.tick() nua: moi lan goi se treo
+                # het `carla_tick_timeout_s` truoc khi bao hong, tuc vong lap tut xuong con
+                # vai nhip mot phut va telemetry gan nhu dung han. Bo qua tick, chi thu noi
+                # lai theo nhip rieng, de telemetry (connected=false) van chay deu cho
+                # giao dien biet duong ma hien "mat ket noi".
+                tick_ok = False
+                self._attempt_reconnect()
+            else:
                 try:
-                    control = self.current_mode.tick(snapshot)
-                    if control is not None:
-                        self.session.ego.apply_control(control)
-                except Exception:
-                    logger.exception("Mode %s tick() raised", self.current_mode.name)
-                self._check_route_completion()
+                    self.session.world.tick()
+                    tick_ok = True
+                except RuntimeError as exc:
+                    # KHONG `continue` o day. Ban truoc nhay thang sang vong sau, nen khi
+                    # CarlaUE4 khoi dong lai (moi handle world/ego thanh rac) vong lap quay
+                    # mai ma KHONG con phat telemetry nao: dashboard van bao "Da ket noi",
+                    # camera dung hinh, va khong cho nao noi ra rang CARLA da mat. Bay gio
+                    # van phat telemetry voi connected=false, va thu noi lai.
+                    tick_ok = False
+                    self._handle_tick_failure(exc)
+
+            if tick_ok:
+                self._tick_failures = 0
+                snapshot = self.session.world.get_snapshot()
+
+                if self.current_mode is not None and self.session.ego is not None:
+                    try:
+                        control = self.current_mode.tick(snapshot)
+                        if control is not None:
+                            self.session.ego.apply_control(control)
+                    except Exception:
+                        logger.exception("Mode %s tick() raised", self.current_mode.name)
+                    self._check_route_completion()
 
             now = time.time()
             if now - last_publish >= publish_interval:
-                payload = telemetry.build(self.session, self.current_mode)
+                try:
+                    payload = telemetry.build(self.session, self.current_mode, connected=tick_ok)
+                except RuntimeError:
+                    # ego/world da chet giua chung — telemetry.build doc `ego.is_alive`.
+                    payload = {"type": "telemetry", "t": now, "mode": "IDLE",
+                               "connected": False, "ego_alive": False}
                 self.hub.publish_stream_text(json.dumps(payload))
                 last_publish = now
+
+    # ------------------------------------------------------------------ mat ket noi CARLA
+    _RECONNECT_INTERVAL_S = 3.0
+
+    def _handle_tick_failure(self, exc):
+        """Mot lan `world.tick()` hong: phan biet su co nhat thoi voi CarlaUE4 da chet."""
+        self._tick_failures += 1
+        # Hoi thang simulator bang mot RPC 2 giay thay vi dem so lan tick hong. Dem thi
+        # phai cho `carla_timeout_s` (20s) MOI LAN hong, tuc vai chuc giay den vai phut moi
+        # dam ket luan — trong khi cau hoi "CarlaUE4 con song khong?" tra loi duoc ngay.
+        if self.session.simulator_reachable(2.0):
+            logger.warning("world.tick() hong (%d) nhung simulator van tra loi: %s",
+                           self._tick_failures, exc)
+            time.sleep(0.5)
+            return
+
+        self._carla_lost_notified = True
+        self._next_reconnect_at = time.time() + self._RECONNECT_INTERVAL_S
+        logger.error("Mat ket noi toi CARLA (%s). Dang thu noi lai moi %.0fs — neu ban vua "
+                     "khoi dong lai CarlaUE4 thi KHONG can tat Bridge Server.",
+                     exc, self._RECONNECT_INTERVAL_S)
+        # Mode dang chay bam vao mot chiec xe khong con ton tai — bo no truoc khi bao ra.
+        self.current_mode = None
+        self.route_context = None
+        self.hub.publish_control_text(protocol.error(
+            "CARLA_LOST", "Mất kết nối tới CARLA (CarlaUE4 có thể đã đóng hoặc đang khởi "
+                          "động lại). Bridge Server sẽ tự nối lại, không cần tắt."))
+
+    def _attempt_reconnect(self):
+        """Thu noi lai CARLA theo nhip `_RECONNECT_INTERVAL_S`. Chi goi khi da biet mat."""
+        now = time.time()
+        if now < self._next_reconnect_at:
+            return
+        self._next_reconnect_at = now + self._RECONNECT_INTERVAL_S
+        if not self.session.simulator_reachable(2.0):
+            return                       # CarlaUE4 chua boot xong — im lang cho tiep
+        try:
+            self.session.reconnect()
+        except Exception as exc:
+            logger.warning("Noi lai CARLA that bai, se thu tiep: %s", exc)
+            return
+
+        town = self.session.current_town_short()
+        logger.info("Da noi lai CARLA (map=%s). Phien cu da mat — bam \"Bat dau phien\" de "
+                    "spawn xe moi.", town)
+        self._tick_failures = 0
+        self._carla_lost_notified = False
+        # World moi = do thi/spawn point moi. Xoa cache theo town de khong phuc vu do thi
+        # cua mot world da khong con.
+        self._planner_cache.pop(town, None)
+        self.map_graph_json_cache.pop(town, None)
+        self._refresh_spawn_points()
+        self._ensure_town_graph()
+        self.hub.publish_control_text(protocol.dumps("CarlaReconnected", town=town))
 
     def _drain_commands(self):
         while True:
@@ -131,6 +229,16 @@ class SimLoop:
 
     def _cmd_StartSession(self, command):
         spawn_index = command.get("spawn_index", -1)
+        # Xe MOI thi moi thu bam theo xe cu deu het hieu luc. Mode dang chay om mot
+        # RouteTracker dung cho vi tri cu: sau khi respawn, tracker thay xe "da toi noi"
+        # ngay tu tick dau (route_completed=1) va mode phanh cung 1.0 vinh vien — xe dung
+        # im, khong loi nao hien ra o dau ca. Quan sat duoc that: brake=1.00, speed=0,
+        # active_controller="arrived". Nen dung mode va bo tuyen cu TRUOC khi spawn.
+        if self.current_mode is not None:
+            self.current_mode.stop()
+            self.current_mode = None
+        self.route_context = None
+        self._route_completed_notified = False
         self.session.spawn_ego(spawn_index)
         self.hub.publish_control_text(protocol.dumps("SessionStarted"))
 
@@ -194,7 +302,9 @@ class SimLoop:
             self.current_mode.stop()
             self.current_mode = None
         self.route_context = None  # route was planned on the old town's graph — no longer valid
+        self._route_completed_notified = False
         self.session.load_town(town)
+        self._refresh_spawn_points()
         self._ensure_town_graph()
         self.hub.publish_control_text(protocol.dumps("TownChanged", town=town))
 

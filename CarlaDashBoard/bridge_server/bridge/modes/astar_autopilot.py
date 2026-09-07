@@ -7,6 +7,8 @@ RouteContext that already has a route to drive.
 
 from collections import namedtuple
 
+import carla
+
 from .base import ModeRuntime
 
 RouteContext = namedtuple("RouteContext", ["planner", "route"])
@@ -39,11 +41,21 @@ class AstarAutopilotMode(ModeRuntime):
         vehicle = self.session.ego
         if vehicle is None or not vehicle.is_alive:
             return None
-        control = self.controller.compute_control(
+
+        self.route_state = self.tracker.update(vehicle.get_transform())
+
+        # TOI DICH THI DUNG HAN. Ban truoc luon goi compute_control() ke ca sau khi
+        # `route_completed`: pure-pursuit van bam node cuoi, va vi khong con node nao de
+        # tien toi nua no giu THROTTLE 1.0 vinh vien — do duoc that: route_completed=true,
+        # route_remaining_m=2.0, throttle=1.0, speed=0.15 km/h, xe ri ri huc vao vat can
+        # phia truoc sau khi da "toi noi". Su kien RouteCompleted van bao dung, chi co xe
+        # la khong chiu dung. Giong RouteLearnedAutopilotMode, tra ve phanh cung.
+        if self.route_state.get("route_completed"):
+            return carla.VehicleControl(throttle=0.0, steer=0.0, brake=1.0)
+
+        return self.controller.compute_control(
             self.route_context.planner.graph, self.route_context.route,
             self.tracker.target_index, vehicle, speed_limit_kmh=vehicle.get_speed_limit())
-        self.route_state = self.tracker.update(vehicle.get_transform())
-        return control
 
     def stop(self):
         self.tracker = None

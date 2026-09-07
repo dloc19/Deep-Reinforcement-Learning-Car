@@ -26,10 +26,43 @@ public sealed class WebSocketClient : IAsyncDisposable
 
     public async Task ConnectAsync(Uri uri, CancellationToken ct)
     {
-        _socket = new ClientWebSocket();
-        await _socket.ConnectAsync(uri, ct).ConfigureAwait(false);
+        // Dep sach ket noi CU truoc khi mo ket noi moi. Ban truoc gan de `_socket`/
+        // `_receiveTask` bi ghi de: vong receive cu VAN CHAY tren socket cu, van ban tiep
+        // TextReceived/BinaryReceived, va khi no chet lai ban them mot `Closed` nua —
+        // ma `Closed` chinh la thu kich hoat reconnect. Moi lan reconnect vi vay de ra
+        // them mot vong receive mo coi, va so ket noi tang gap doi sau moi lan rot.
+        await TeardownAsync().ConfigureAwait(false);
+
+        var socket = new ClientWebSocket();
+        _socket = socket;
+        await socket.ConnectAsync(uri, ct).ConfigureAwait(false);
         _receiveCts = new CancellationTokenSource();
-        _receiveTask = Task.Run(() => ReceiveLoopAsync(_receiveCts.Token));
+        var token = _receiveCts.Token;
+        _receiveTask = Task.Run(() => ReceiveLoopAsync(socket, token), CancellationToken.None);
+    }
+
+    /// <summary>Huy vong receive dang chay + dong/giai phong socket hien tai. An toan khi
+    /// goi luc chua co ket noi nao.</summary>
+    private async Task TeardownAsync()
+    {
+        var cts = _receiveCts;
+        var task = _receiveTask;
+        var socket = _socket;
+        _receiveCts = null;
+        _receiveTask = null;
+        _socket = null;
+
+        cts?.Cancel();
+        if (socket is not null)
+        {
+            try { socket.Abort(); } catch { /* best-effort */ }
+            socket.Dispose();
+        }
+        if (task is not null)
+        {
+            try { await task.ConfigureAwait(false); } catch { /* da bao qua Closed */ }
+        }
+        cts?.Dispose();
     }
 
     public Task SendTextAsync(string text, CancellationToken ct = default)
@@ -40,22 +73,22 @@ public sealed class WebSocketClient : IAsyncDisposable
         return _socket.SendAsync(bytes, WebSocketMessageType.Text, true, ct);
     }
 
-    private async Task ReceiveLoopAsync(CancellationToken ct)
+    private async Task ReceiveLoopAsync(ClientWebSocket socket, CancellationToken ct)
     {
         var buffer = new byte[ReceiveBufferSize];
         Exception? failure = null;
         try
         {
-            while (!ct.IsCancellationRequested && _socket is { State: WebSocketState.Open })
+            while (!ct.IsCancellationRequested && socket.State == WebSocketState.Open)
             {
                 using var message = new MemoryStream();
                 WebSocketReceiveResult result;
                 do
                 {
-                    result = await _socket.ReceiveAsync(buffer, ct).ConfigureAwait(false);
+                    result = await socket.ReceiveAsync(buffer, ct).ConfigureAwait(false);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, ct)
+                        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, ct)
                             .ConfigureAwait(false);
                         return;
                     }
@@ -78,18 +111,22 @@ public sealed class WebSocketClient : IAsyncDisposable
         }
         finally
         {
-            Closed?.Invoke(failure);
+            // Chi bao "rot ket noi" neu socket nay VAN la socket hien hanh. Neu no da bi
+            // TeardownAsync/ConnectAsync thay the thi day la mot vong cu dang tan, va bao
+            // `Closed` o day se kich hoat them mot lan reconnect thua.
+            if (ReferenceEquals(_socket, socket))
+                Closed?.Invoke(failure);
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        _receiveCts?.Cancel();
-        if (_socket is { State: WebSocketState.Open })
+        var socket = _socket;
+        if (socket is { State: WebSocketState.Open })
         {
             try
             {
-                await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None)
+                await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None)
                     .ConfigureAwait(false);
             }
             catch
@@ -97,10 +134,6 @@ public sealed class WebSocketClient : IAsyncDisposable
                 // best-effort close
             }
         }
-        _socket?.Dispose();
-        if (_receiveTask is not null)
-        {
-            try { await _receiveTask.ConfigureAwait(false); } catch { /* already surfaced via Closed */ }
-        }
+        await TeardownAsync().ConfigureAwait(false);
     }
 }

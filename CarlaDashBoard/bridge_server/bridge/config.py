@@ -16,7 +16,13 @@ class BridgeConfig:
     # --- CARLA connection ---
     carla_host: str = "127.0.0.1"
     carla_port: int = 2000
-    carla_timeout_s: float = 20.0
+    carla_timeout_s: float = 20.0            # dung cho connect() va load_world() — cham that
+    # Timeout cho cac lenh trong vong lap thuong (chu yeu la world.tick()). Tach rieng khoi
+    # `carla_timeout_s` vi hai viec nay co thang thoi gian khac han nhau: mot tick binh
+    # thuong mat ~5ms, con load_world() mat vai giay. De chung o 20s nghia la khi CarlaUE4
+    # chet, MOI tick treo du 20 giay truoc khi bao hong — dashboard dung hinh 20+ giay ma
+    # khong noi gi. 5s van rong gap ~1000 lan mot tick binh thuong.
+    carla_tick_timeout_s: float = 5.0
     sim_fps: float = 20.0                    # world.tick() rate in synchronous mode
 
     # --- World / vehicle ---

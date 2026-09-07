@@ -22,18 +22,21 @@ _JSON_HEADERS = [("Content-Type", "application/json; charset=utf-8"), ("Access-C
 
 
 def _server_info_payload(sim: SimLoop):
-    spawn_points = sim.session.map.get_spawn_points() if sim.session.map else []
+    # `spawn_points` doc tu cache ma SIM THREAD dung san (SimLoop._refresh_spawn_points),
+    # KHONG goi `map.get_spawn_points()` o day. Ham nay chay tren luong asyncio, va quy tac
+    # xuyen suot server la chi mot luong duy nhat cham vao API CARLA (xem docstring cua
+    # sim_loop.py, va rui ro §13 "CARLA synchronous mode chi chiu mot client chu dong"):
+    # goi tu day vua dua vao mot cuoc dua voi world.tick(), vua chan ca event loop — tuc
+    # dung ca /stream cua moi client khac — trong luc cho CARLA tra loi.
+    spawn_points = sim.spawn_points_cache
     return protocol.dumps(
         "ServerInfo",
         towns=TOWNS,
-        current_town=sim.session.current_town_short(),
+        current_town=sim.current_town_cache,
         weather_presets=[{"name": name, "group": group} for name, group in WEATHER_PRESETS],
         vehicle_filter=sim.cfg.vehicle_filter,
         spawn_point_count=len(spawn_points),
-        spawn_points=[
-            {"index": i, "x": round(t.location.x, 1), "y": round(t.location.y, 1), "yaw": round(t.rotation.yaw, 1)}
-            for i, t in enumerate(spawn_points)
-        ],
+        spawn_points=spawn_points,
         mode=sim.current_mode.name if sim.current_mode else protocol.MODE_IDLE,
         has_session=sim.session.ego is not None,
     )
@@ -62,6 +65,8 @@ async def _stream_handler(websocket, path, hub: Hub):
     try:
         async for _ in websocket:
             pass  # /stream is server -> client only; ignore anything a client sends here
+    except websockets.exceptions.ConnectionClosed:
+        pass  # xem chu thich o _control_handler
     finally:
         hub.remove_stream_client(websocket)
         logger.info("stream client disconnected (%d total)", len(hub.stream_clients))
@@ -69,12 +74,20 @@ async def _stream_handler(websocket, path, hub: Hub):
 
 async def _control_handler(websocket, path, hub: Hub, sim: SimLoop):
     hub.add_control_client(websocket)
-    await websocket.send(_server_info_payload(sim))
     try:
+        await websocket.send(_server_info_payload(sim))
         async for message in websocket:
             _dispatch(message, sim)
+    except websockets.exceptions.ConnectionClosed:
+        # Client bien mat KHONG phai loi cua server. Truoc day ngoai le nay bay len tan
+        # `websockets`, va thu vien in ra mot traceback ~30 dong ("connection handler
+        # failed") cho MOI lan mot client rot. Dong CarlaDashBoard.Wpf, chuyen man hinh,
+        # hay khoi dong lai server la du de log day traceback trong khi khong co gi hong —
+        # chinh la thu lam ban demo trong nhu dang loi rat nang.
+        pass
     finally:
         hub.remove_control_client(websocket)
+        logger.info("control client disconnected (%d total)", len(hub.control_clients))
 
 
 def _dispatch(message, sim: SimLoop):
@@ -101,9 +114,10 @@ async def _router(websocket, path, hub: Hub, sim: SimLoop):
 async def run(cfg):
     hub = Hub()
     sim = SimLoop(cfg, hub)
-    sim.start()  # connects to CARLA + starts the sim thread (blocking connect, done once)
-
+    # Bind loop TRUOC khi start(): sim thread bat dau publish telemetry ngay tu tick dau,
+    # nen neu bind sau thi nhung tick dau tien roi vao khoang trong (hub.loop is None).
     hub.bind_loop(asyncio.get_event_loop())
+    sim.start()  # connects to CARLA + starts the sim thread (blocking connect, done once)
 
     async def handler(websocket, path):
         await _router(websocket, path, hub, sim)
@@ -111,8 +125,16 @@ async def run(cfg):
     async def process_request(path, request_headers):
         return await _maps_process_request(path, request_headers, sim)
 
-    async with websockets.serve(handler, cfg.ws_host, cfg.ws_port, max_size=None,
-                                 process_request=process_request):
-        logger.info("Bridge Server listening on ws://%s:%d (/stream, /control) "
-                    "+ http://%s:%d/maps/{town}", cfg.ws_host, cfg.ws_port, cfg.ws_host, cfg.ws_port)
-        await asyncio.Future()  # run forever
+    try:
+        async with websockets.serve(handler, cfg.ws_host, cfg.ws_port, max_size=None,
+                                     process_request=process_request):
+            logger.info("Bridge Server listening on ws://%s:%d (/stream, /control) "
+                        "+ http://%s:%d/maps/{town}", cfg.ws_host, cfg.ws_port, cfg.ws_host, cfg.ws_port)
+            await asyncio.Future()  # run forever
+    finally:
+        # Tra CARLA ve che do bat dong bo va don xe/camera. Khong co doan nay thi tat
+        # server (Ctrl+C) de lai world o synchronous_mode=True MA KHONG CON AI TICK:
+        # cua so CarlaUE4 dung hinh, trong y het nhu CARLA bi treo, va lan chay sau phai
+        # khoi dong lai ca simulator. `SimLoop.stop()` da lo phan khoi phuc settings goc.
+        logger.info("Dang dung Bridge Server: tra CARLA ve che do bat dong bo...")
+        sim.stop()

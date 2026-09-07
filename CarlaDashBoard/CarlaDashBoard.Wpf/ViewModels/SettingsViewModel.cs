@@ -86,12 +86,30 @@ public sealed partial class SettingsViewModel : ObservableObject
             "CameraParamsChanged" => "Đã áp dụng cấu hình camera mới.",
             "RecordingStarted" => "Đã bắt đầu ghi dữ liệu.",
             "RecordingStopped" => "Đã dừng ghi dữ liệu.",
+            "CarlaReconnected" => $"Đã nối lại CARLA ({e.Payload.GetProperty("town").GetString()}) — " +
+                                  "phiên cũ đã mất, bấm \"Bắt đầu phiên\" để spawn xe mới.",
             _ => StatusMessage,
         };
         if (e.Type is "SessionStarted") HasSession = true;
         if (e.Type is "SessionStopped") { HasSession = false; CurrentModeWire = "IDLE"; }
+        // CarlaUE4 chet/khoi dong lai: xe cu bien mat cung the gioi cu. Bridge Server da bo
+        // ego + mode cua no, nhung phia nay chi cap nhat HasSession qua ServerInfo (gui mot
+        // lan luc nối) va SessionStarted/Stopped — khong co dong nay thi HasSession ket o
+        // true, nen nut "Bat dau phien" bi khoa vinh vien va nguoi dung khong con duong nao
+        // spawn lai xe ngoai viec khoi dong lai ca app.
+        if (e.Type is "CarlaReconnected" || IsCarlaLost(e))
+        {
+            HasSession = false;
+            CurrentModeWire = "IDLE";
+        }
         if (e.Type is "ModeChanged") CurrentModeWire = e.Payload.GetProperty("mode").GetString() ?? CurrentModeWire;
     }
+
+    /// <summary>Error kèm code "CARLA_LOST" (sim_loop._handle_tick_failure).</summary>
+    internal static bool IsCarlaLost(ControlEvent e) =>
+        e.Type == "Error" &&
+        e.Payload.TryGetProperty("code", out var code) &&
+        code.GetString() == "CARLA_LOST";
 
     [RelayCommand]
     private void Connect() => _connection.Connect(Host, Port);
