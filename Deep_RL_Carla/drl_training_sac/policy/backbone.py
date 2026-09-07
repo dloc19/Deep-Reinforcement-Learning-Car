@@ -2,7 +2,7 @@
 DRL algorithm in this package (PPO's `GaussianActor`/`ValueCritic`, SAC's `GaussianPolicy`/
 `QNetwork` — see `../drl_training/policy/actor_critic.py` and `sac/networks.py`).
 
-This mirrors `SteeringNet` in `behavior_cloning/train_il_v9.ipynb` layer-for-layer,
+This mirrors `SteeringNet` in `behavior_cloning/train_il.ipynb` layer-for-layer,
 including attribute names (`conv`, `pool`, `cnn_fc`, `scalar_mlp`) and the first two layers
 of its `head`. That is not a style choice: `policy/il_compat.py` copies tensors by
 state_dict key name from the IL checkpoint into these modules, so the definitions must stay
@@ -18,7 +18,7 @@ involved and they are NOT the same number:
   - 480x384  what the collector records (`collector_config.json`'s `camera.width/height`)
     and what the DRL env's camera runs at (`sac_config.json`).
   - 240x192  what `SteeringNet` actually saw during IL training (`IMAGE_WIDTH`/
-    `IMAGE_HEIGHT` in train_il_v9.ipynb — masks are downscaled with `downscale_labels`).
+    `IMAGE_HEIGHT` in train_il.ipynb — masks are downscaled with `downscale_labels`).
   - 160x128  this file's fallback when a config omits the field.
 Nothing breaks when they differ, but a warm-started actor does see a different scale of
 pooled features than IL did; fine-tuning adapts those statistics. Set the env's
@@ -45,7 +45,7 @@ NUM_CLASSES = NUM_SEG_CLASSES
 # thay vi duoc bieu dien truc tiep. (4, 6) giu lai bo cuc tho: 4 hang (gan -> xa) x 6 cot
 # (trai -> phai), tuc `cnn_fc` nhan 64*24 = 1536 chieu thay vi 64.
 #
-# PHAI KHOP `POOL_GRID` trong behavior_cloning/train_il_v9.ipynb §8. Doi mot ben ma quen ben
+# PHAI KHOP `POOL_GRID` trong behavior_cloning/train_il.ipynb §8. Doi mot ben ma quen ben
 # kia thi `il_compat.load_matching` bao loi shape ngay o `cnn_fc.0.weight` — co y de nhu vay,
 # vi day chinh xac la loai lech phai chet to chu khong duoc chay im lang.
 POOL_GRID = (4, 6)

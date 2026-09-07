@@ -121,7 +121,7 @@ class ValueCritic(nn.Module):
 
 def load_il_actor_weights(actor, il_checkpoint):
     """Warm-start `actor.backbone` + `actor.trunk_head` + `actor.mean_head` from an IL
-    checkpoint dict (as saved by `train_il_v9.ipynb`, i.e.
+    checkpoint dict (as saved by `train_il.ipynb`, i.e.
     `torch.load("best_il_model.pth")`).
 
     `actor.log_std` is left at its fresh init — IL has no notion of action-noise scale.

@@ -30,7 +30,7 @@ ENV_DEFAULTS = {
     # width/height  = do phan giai CAMERA segmentation (khop collector: 480x384).
     # obs_width/obs_height = do phan giai OBSERVATION dua vao mang, sau khi
     #   resize_class_map() ha mau. Phai khop IMAGE_WIDTH/IMAGE_HEIGHT cua
-    #   train_il_v9.ipynb (240x192) thi actor warm-start moi nhin thay dung thang do
+    #   train_il.ipynb (240x192) thi actor warm-start moi nhin thay dung thang do
     #   dac trung nhu luc train IL. Ha o day cung giam 4x bo nho rollout/replay
     #   (SAC 50k transition: 9.2GB o 480x384 -> 2.2GB o 240x192).
     "width": 480, "height": 384, "obs_width": 240, "obs_height": 192,

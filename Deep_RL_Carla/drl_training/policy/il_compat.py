@@ -1,7 +1,7 @@
 """Generic IL-checkpoint -> DRL-module state_dict remapping, shared by PPO's
 `GaussianActor` and SAC's `GaussianPolicy` (see `policy/actor_critic.py` / `sac/networks.py`).
 
-IL's `SteeringNet` (in `behavior_cloning/train_il_v9.ipynb`) has:
+IL's `SteeringNet` (in `behavior_cloning/train_il.ipynb`) has:
     conv.*, pool (no params), cnn_fc.*, scalar_mlp.*      -> the shared backbone
     head.0 (Linear 96->64), head.3 (Linear 64->32)          -> the shared "trunk head"
     head.6 (Linear 32->2, tanh applied outside the Sequential) -> the final action layer
@@ -77,7 +77,7 @@ def load_matching(module, remapped, allow_missing=()):
                 hint = ("Key nay phu thuoc POOL_GRID. module co %d chieu vao, checkpoint co "
                         "%d. Neu checkpoint la ban TRUOC v5 (pool (1,1), 64 chieu) thi no "
                         "khong dung duoc voi backbone hien tai — train lai bang "
-                        "behavior_cloning/train_il_v9.ipynb, hoac dat POOL_GRID = (1, 1) "
+                        "behavior_cloning/train_il.ipynb, hoac dat POOL_GRID = (1, 1) "
                         "trong policy/backbone.py de quay ve kien truc cu." %
                         (tuple(own_state[key].shape)[-1], tuple(tensor.shape)[-1]))
             raise RuntimeError(

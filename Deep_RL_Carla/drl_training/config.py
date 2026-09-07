@@ -26,7 +26,7 @@ COMMON_DEFAULTS = {
     # width/height  = do phan giai CAMERA segmentation (khop collector: 480x384).
     # obs_width/obs_height = do phan giai OBSERVATION dua vao mang, sau khi
     #   resize_class_map() ha mau. Phai khop IMAGE_WIDTH/IMAGE_HEIGHT cua
-    #   train_il_v9.ipynb (240x192) thi actor warm-start moi nhin thay dung thang do
+    #   train_il.ipynb (240x192) thi actor warm-start moi nhin thay dung thang do
     #   dac trung nhu luc train IL. Ha o day cung giam 4x bo nho rollout/replay
     #   (SAC 50k transition: 9.2GB o 480x384 -> 2.2GB o 240x192).
     "width": 480, "height": 384, "obs_width": 240, "obs_height": 192,
@@ -145,7 +145,7 @@ ALGO_DEFAULTS = {
     "ppo": {
         "output": "./runs/ppo_lane_keep",
         # LR TACH RIENG actor/critic + `critic_warmup_updates`: xem docstring
-        # ppo/ppo_agent.py.__init__ va §12 cua behavior_cloning/train_il_v9.ipynb.
+        # ppo/ppo_agent.py.__init__ va §12 cua behavior_cloning/train_il.ipynb.
         "actor_lr": 2e-5, "critic_lr": 3e-4, "critic_warmup_updates": 10,
         # [steer, longitudinal]. std(steer) = e^-3 = 0.05, du de tham do quanh mot lenh lai
         # co bien do dien hinh 0.005-0.03 ma khong lang xe ra khoi lan ngay rollout dau.

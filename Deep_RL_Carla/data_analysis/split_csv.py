@@ -29,7 +29,7 @@ KEY_FIELDS = ["session_id", "sample_id", "frame"]
 # QUAN TRỌNG: lane_offset_m/heading_error_rad/is_junction KHÔNG phải observation của model —
 # chúng chỉ dùng để tính reward (DRL) hoặc chẩn đoán (đánh giá IL theo mức lệch làn). Đưa
 # vào input model là lỗi rò rỉ nhãn (leakage) đã sửa trong
-# `behavior_cloning/train_il_v9.ipynb` (xem `docs/csv_fields_by_task.md`). Cột này vẫn có
+# `behavior_cloning/train_il.ipynb` (xem `docs/csv_fields_by_task.md`). Cột này vẫn có
 # mặt trong file split ra vì file CSV này phục vụ cả huấn luyện lẫn đánh giá/phân tích, không
 # phải input tensor trực tiếp — notebook tự chọn đúng tập cột nó cần khi đọc CSV.
 IL_FIELDS = KEY_FIELDS + [

@@ -631,7 +631,7 @@ class CarlaLaneKeepEnv(object):
     def _make_observation(self, state):
         # Camera chay o 480x384 (khop collector, de dung chung mot ham voi duong
         # camera that sau nay), nhung OBSERVATION ha xuong 240x192 = dung do phan
-        # giai `IMAGE_WIDTH`/`IMAGE_HEIGHT` ma train_il_v9.ipynb da train. Hai ly do:
+        # giai `IMAGE_WIDTH`/`IMAGE_HEIGHT` ma train_il.ipynb da train. Hai ly do:
         #   1. Actor warm-start tu IL nhin thay dung thang do dac trung no da hoc.
         #      AdaptiveAvgPool2d khien moi kich thuoc deu CHAY duoc nen sai lech nay
         #      khong bao loi gi - no chi lam warm-start kem hieu qua trong im lang.

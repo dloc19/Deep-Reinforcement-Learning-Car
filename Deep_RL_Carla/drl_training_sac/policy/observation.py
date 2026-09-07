@@ -120,7 +120,7 @@ class ObservationContract(object):
             raise ValueError(
                 "Checkpoint IL dung %d lop segmentation, nhung pipeline hien tai dung %d "
                 "lop (%s). Day KHONG phai loi shape - no se chay im lang va lai sai. Train "
-                "lai theo thu tu: train-seg.ipynb -> train_il_v9.ipynb -> DRL, hoac quay ve "
+                "lai theo thu tu: train-segment-lane.ipynb -> train_il.ipynb -> DRL, hoac quay ve "
                 "dung checkpoint IL cung phien ban bang nhan." %
                 (self.num_classes, NUM_SEG_CLASSES, SEG_CLASS_NAMES))
 
@@ -131,7 +131,7 @@ class ObservationContract(object):
                   "    Day la he qua cua chinh hanh dong can du doan, nen model se hoc doc\n"
                   "    lai dap an thay vi nhin anh segmentation. MAE offline se rat dep va\n"
                   "    xe se KHONG lai duoc trong vong kin. Train lai voi\n"
-                  "    behavior_cloning/train_il_v9.ipynb (da bo cac cot nay)." % (leaks,))
+                  "    behavior_cloning/train_il.ipynb (da bo cac cot nay)." % (leaks,))
 
     def default_log_std(self, fallback=(-3.0, -1.5)):
         """`log(action_std)` tu checkpoint, hoac `fallback` neu checkpoint khong ghi.
@@ -168,7 +168,7 @@ class ObservationContract(object):
 def resize_class_map(class_map, height, width):
     """Remaps a raw CARLA semantic-segmentation frame (raw tags 0-22) onto the project's
     4-class lane-keeping scheme (`RAW_TO_TRAIN_LANE_LUT` — Background/Road/RoadLine/Sidewalk,
-    the same table as `train-seg.ipynb`'s `LABEL_LUT` / `train_il_v9.ipynb`'s `SEG_LABEL_LUT`),
+    the same table as `train-segment-lane.ipynb`'s `LABEL_LUT` / `train_il.ipynb`'s `SEG_LABEL_LUT`),
     then nearest-neighbour resizes it.
 
     This is the single choke point every *live* caller — this env's `_make_observation` and
@@ -188,7 +188,7 @@ def resize_class_map(class_map, height, width):
     Measured on a perspective lane mask, 384x480 -> 192x240 with plain nearest keeps only
     69% of the RoadLine pixels that the coverage-preserving pass keeps (and 71% in the far
     half of the road, where the marking decides how early the car starts a turn). That is a
-    silent train/inference mismatch: `train_il_v9.ipynb` downscales its training masks with
+    silent train/inference mismatch: `train_il.ipynb` downscales its training masks with
     `downscale_labels`, which restores any output cell whose *area coverage* by a thin class
     exceeds `THIN_COVER_THRESH`. This function has to do the identical thing, or a
     warm-started policy sees a systematically thinner lane marking online than it was
