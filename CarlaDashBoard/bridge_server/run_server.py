@@ -38,7 +38,7 @@ def parse_args():
                               "{deep-rl-carla-root}/behavior_cloning/best_il_model.pth")
     parser.add_argument("--drl-checkpoint-path", default="",
                          help="Checkpoint DRL .pt (Phase 4). Mac dinh: "
-                              "{deep-rl-carla-root}/drl_training/runs/{algo}_lane_keep/{algo}_latest.pt")
+                              "{deep-rl-carla-root}/drl_training/runs/best/{algo}_latest.pt")
     parser.add_argument("--drl-algorithm", default="ppo", choices=["ppo", "sac"])
     parser.add_argument("--learned-autopilot-device", default="cuda", choices=["cuda", "cpu"],
                          help="Tu dong ve cpu neu khong co CUDA (Phase 4, IL/DRL Autopilot)")

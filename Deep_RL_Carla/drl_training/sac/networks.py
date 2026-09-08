@@ -37,12 +37,34 @@ class GaussianPolicy(nn.Module):
         self.trunk_head = build_trunk_head(self.backbone.out_features)
         self.mean_head = nn.Linear(32, 2)
         self.log_std_head = nn.Linear(32, 2)
+        if log_std_init is None:
+            log_std_init = -2.5
         # Small weights + constant bias so the log_std head starts near a fixed value
         # (~log_std_init) regardless of input, independent of the (warm-started) trunk —
         # keeps the actor's initial action noise modest instead of whatever a randomly
         # initialized head would produce, so early SAC rollouts stay close to IL behaviour.
         nn.init.uniform_(self.log_std_head.weight, -1e-3, 1e-3)
-        nn.init.constant_(self.log_std_head.bias, float(log_std_init))
+        # Bias THEO TUNG CHIEU, khong phai mot vo huong dung chung.
+        #
+        # `log_std_head` la Linear(32, 2) — hai chieu rieng biet [steer, longitudinal] — va
+        # hai chieu do khong cung thang chut nao. `action_std` do tren tap train IL la
+        # (0.078, 0.306): lech chuan cua lenh lai nho gap 4 lan lenh ga. Dat mot vo huong
+        # chung (vd trung binh log = -1.866 -> std 0.155) lam nhieu lai LON GAP DOI muc can
+        # va nhieu ga chi con MOT NUA.
+        #
+        # Do duoc truc tiep tren runs/sac_v2_smoke voi bias vo huong 0.155: lenh lai dien
+        # hinh cua IL chi 0.005-0.03, nen nhieu 0.155 lon gap 5-30 lan tin hieu; xe lang
+        # ngay va chet sau ~48 buoc (warm-start IL binh thuong di duoc 176-300 buoc), lech
+        # lan 0.889 m, 85% episode va cham, va mean_ep_reward xau dan -33 -> -107.
+        # PPO khong dinh loi nay vi `GaussianActor.log_std` von la vector 2 chieu.
+        if isinstance(log_std_init, (list, tuple)):
+            if len(log_std_init) != 2:
+                raise ValueError("log_std_init dang danh sach phai co dung 2 phan tu "
+                                 "[steer, longitudinal], nhan duoc %r" % (log_std_init,))
+            with torch.no_grad():
+                self.log_std_head.bias.copy_(torch.tensor([float(v) for v in log_std_init]))
+        else:
+            nn.init.constant_(self.log_std_head.bias, float(log_std_init))
 
     def forward(self, seg_map, scalar_features):
         feats = self.trunk_head(self.backbone(seg_map, scalar_features))

@@ -65,7 +65,7 @@ def resolve_device(device_name: str):
 
 
 def build_il_predictor(ns, checkpoint_path, device_name="cpu"):
-    """Loads an IL checkpoint (`behavior_cloning/train_il_v9.ipynb` output) and returns
+    """Loads an IL checkpoint (`behavior_cloning/train_il.ipynb` output) and returns
     `(contract, predict)`. `predict(seg, scalar) -> np.ndarray[2]` (steer, throttle/brake in
     [-1, 1]) is deterministic — IL has no notion of an exploration distribution, it's a
     straight regression to the demonstrated action, so there's no `deterministic` flag to
@@ -110,7 +110,35 @@ def _build_agent(algorithm, contract, device):
         actor = GaussianPolicy(contract.scalar_feature_dim, contract.num_classes)
         critic = TwinQNetwork(contract.scalar_feature_dim, action_dim=2, num_classes=contract.num_classes)
         return SACAgent(actor, critic, {}, device)
-    raise ValueError("drl_algorithm phai la 'ppo' hoac 'sac', nhan duoc '%s'" % algorithm)
+    raise ValueError("drl_algorithm phải là 'ppo' hoặc 'sac', nhận được '%s'" % algorithm)
+
+
+def describe_checkpoint(path):
+    """Vai dong tom tat metadata cua mot checkpoint DRL, de ghi vao log khi khoi dong.
+
+    Muc dich la lam LO ra viec nap nham checkpoint. Nap nham khong gay loi nao: shape van
+    khop (kien truc khong doi giua cac lan train), xe van lai duoc, chi la lai bang mot
+    policy khac voi y dinh. Rieng `update` con cho biet actor da thuc su duoc train chua —
+    trong `critic_warmup_updates` dau tien cua moi lan chay, actor bi dong bang nen trong so
+    van y het IL.
+    """
+    import torch
+    try:
+        ck = torch.load(str(path), map_location="cpu")
+    except Exception as exc:                                     # noqa: BLE001
+        return ["khong doc duoc metadata: %s" % exc]
+    cfg = ck.get("config") or {}
+    town = cfg.get("town")
+    lines = ["update=%s | algorithm=%s | reward_mode=%s" % (
+        ck.get("update", "?"), ck.get("algorithm", "?"), cfg.get("reward_mode", "raw/khong ro"))]
+    lines.append("train tren town=%s | collision_penalty=%s | w_lane_offset=%s" % (
+        town, cfg.get("collision_penalty"), cfg.get("w_lane_offset")))
+    warmup = cfg.get("critic_warmup_updates")
+    update = ck.get("update")
+    if isinstance(update, int) and isinstance(warmup, int) and update <= warmup:
+        lines.append("[!] CANH BAO: update=%d <= critic_warmup_updates=%d — actor con DONG BANG "
+                     "o checkpoint nay, trong so van la IL nguyen ban, chua hoc DRL." % (update, warmup))
+    return lines
 
 
 def build_drl_predictor(ns, algorithm, il_checkpoint_path, drl_checkpoint_path, device_name="cuda"):

@@ -37,18 +37,24 @@ class Hub:
 
     # --- called from ANY thread (sim loop, camera callbacks) ---
     def publish_stream_binary(self, payload: bytes):
-        self._schedule(self._broadcast(self.stream_clients, payload))
+        self._schedule(self.stream_clients, payload)
 
     def publish_stream_text(self, payload: str):
-        self._schedule(self._broadcast(self.stream_clients, payload))
+        self._schedule(self.stream_clients, payload)
 
     def publish_control_text(self, payload: str):
-        self._schedule(self._broadcast(self.control_clients, payload))
+        self._schedule(self.control_clients, payload)
 
-    def _schedule(self, coro):
-        if self.loop is None:
+    def _schedule(self, clients, payload):
+        # Kiem tra `loop` TRUOC khi tao coroutine. Ban truoc tao `self._broadcast(...)` ngay
+        # o cho goi roi moi kiem tra: khi loop chua duoc bind (sim thread bat dau publish
+        # telemetry ngay tu tick dau, truoc luc server.py goi bind_loop) thi coroutine do bi
+        # vut di khong ai await, va Python in ra "RuntimeWarning: coroutine
+        # 'Hub._broadcast' was never awaited" moi tick.
+        loop = self.loop
+        if loop is None:
             return
-        asyncio.run_coroutine_threadsafe(coro, self.loop)
+        asyncio.run_coroutine_threadsafe(self._broadcast(clients, payload), loop)
 
     @staticmethod
     async def _broadcast(clients, payload):

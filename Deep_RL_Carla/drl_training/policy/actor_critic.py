@@ -49,6 +49,10 @@ class GaussianActor(nn.Module):
         # tin hieu — moi rollout dau tien se lang xe ra khoi lan truoc khi PPO kip hoc gi,
         # va do chinh la thu warm-start IL sinh ra de tranh. Chieu longitudinal thi nguoc
         # lai: gia tri chay ca dai [-1, 1] nen chiu duoc nhieu lon hon nhieu.
+        # None co the lot qua tu config (`log_std_init: null` = "lay tu checkpoint IL"). Cac
+        # entrypoint train xu ly viec do; o day chi can khong no khi ai do dung truc tiep.
+        if log_std_init is None:
+            log_std_init = (-3.0, -1.5)
         if isinstance(log_std_init, (list, tuple)):
             if len(log_std_init) != 2:
                 raise ValueError("log_std_init dang danh sach phai co dung 2 phan tu "
@@ -117,7 +121,7 @@ class ValueCritic(nn.Module):
 
 def load_il_actor_weights(actor, il_checkpoint):
     """Warm-start `actor.backbone` + `actor.trunk_head` + `actor.mean_head` from an IL
-    checkpoint dict (as saved by `train_il_v9.ipynb`, i.e.
+    checkpoint dict (as saved by `train_il.ipynb`, i.e.
     `torch.load("best_il_model.pth")`).
 
     `actor.log_std` is left at its fresh init — IL has no notion of action-noise scale.

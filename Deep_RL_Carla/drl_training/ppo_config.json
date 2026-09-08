@@ -24,7 +24,9 @@
     "warmup_ticks": 4,
     "frame_timeout": 5.0,
     "no_rendering": false,
-    "seed": 42
+    "seed": 42,
+    "town": "Town04",
+    "town_rotate_episodes": 1000000000
   },
   "reward": {
     "w_speed": 1.0,
@@ -35,7 +37,8 @@
     "w_yaw_rate": 0.1,
     "off_lane_penalty": 5.0,
     "collision_penalty": 300.0,
-    "lane_invasion_penalty": 1.0
+    "lane_invasion_penalty": 1.0,
+    "reward_mode": "raw"
   },
   "ppo": {
     "il_checkpoint": "../behavior_cloning/best_il_model.pth",
@@ -46,7 +49,10 @@
     "actor_lr": 2e-05,
     "critic_lr": 0.0003,
     "critic_warmup_updates": 10,
-    "log_std_init": [-3.0, -1.5],
+    "log_std_init": [
+      -3.0,
+      -1.5
+    ],
     "gae_lambda": 0.95,
     "clip_range": 0.2,
     "value_clip_range": null,

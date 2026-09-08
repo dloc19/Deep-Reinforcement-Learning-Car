@@ -92,6 +92,12 @@ class ObservationContract(object):
         self.raw_action_cols = list(checkpoint["raw_action_cols"])
         self.norm_stats = checkpoint["norm_stats"]
         self.traffic_light_vocab = list(checkpoint["traffic_light_vocab"])
+        # Do lech chuan THUC TE cua hanh dong trong tap train IL, [steer, longitudinal].
+        # Dung lam `log_std` khoi tao cho actor DRL: no la thang nhieu tu nhien cua chinh
+        # hanh vi dang duoc fine-tune, chinh xac hon bat ky uoc luong tay nao. None neu
+        # checkpoint cu khong ghi truong nay.
+        action_std = checkpoint.get("action_std")
+        self.action_std = [float(v) for v in action_std] if action_std is not None else None
 
         expected_dim = len(self.continuous_cols) + len(self.raw_action_cols) + len(self.traffic_light_vocab)
         if expected_dim != self.scalar_feature_dim:
@@ -114,7 +120,7 @@ class ObservationContract(object):
             raise ValueError(
                 "Checkpoint IL dung %d lop segmentation, nhung pipeline hien tai dung %d "
                 "lop (%s). Day KHONG phai loi shape - no se chay im lang va lai sai. Train "
-                "lai theo thu tu: train-seg.ipynb -> train_il_v9.ipynb -> DRL, hoac quay ve "
+                "lai theo thu tu: train-segment-lane.ipynb -> train_il.ipynb -> DRL, hoac quay ve "
                 "dung checkpoint IL cung phien ban bang nhan." %
                 (self.num_classes, NUM_SEG_CLASSES, SEG_CLASS_NAMES))
 
@@ -125,7 +131,20 @@ class ObservationContract(object):
                   "    Day la he qua cua chinh hanh dong can du doan, nen model se hoc doc\n"
                   "    lai dap an thay vi nhin anh segmentation. MAE offline se rat dep va\n"
                   "    xe se KHONG lai duoc trong vong kin. Train lai voi\n"
-                  "    behavior_cloning/train_il_v9.ipynb (da bo cac cot nay)." % (leaks,))
+                  "    behavior_cloning/train_il.ipynb (da bo cac cot nay)." % (leaks,))
+
+    def default_log_std(self, fallback=(-3.0, -1.5)):
+        """`log(action_std)` tu checkpoint, hoac `fallback` neu checkpoint khong ghi.
+
+        Ket qua duoc kep duoi -1.0: `action_std` do tren TOAN tap train, nen no gom ca bien
+        thien giua cac tinh huong khac nhau (vao cua vs di thang), khong chi nhieu quanh
+        mot trang thai. Dung nguyen si o chieu longitudinal (std 0.306 -> log -1.19) se cho
+        mot policy tham do rong hon muc can thiet ngay tu rollout dau.
+        """
+        import math
+        if not self.action_std:
+            return tuple(fallback)
+        return tuple(min(math.log(max(v, 1e-6)), -1.0) for v in self.action_std)
 
     def normalize_traffic_light(self, value):
         v = str(value).strip().lower()
@@ -149,7 +168,7 @@ class ObservationContract(object):
 def resize_class_map(class_map, height, width):
     """Remaps a raw CARLA semantic-segmentation frame (raw tags 0-22) onto the project's
     4-class lane-keeping scheme (`RAW_TO_TRAIN_LANE_LUT` — Background/Road/RoadLine/Sidewalk,
-    the same table as `train-seg.ipynb`'s `LABEL_LUT` / `train_il_v9.ipynb`'s `SEG_LABEL_LUT`),
+    the same table as `train-segment-lane.ipynb`'s `LABEL_LUT` / `train_il.ipynb`'s `SEG_LABEL_LUT`),
     then nearest-neighbour resizes it.
 
     This is the single choke point every *live* caller — this env's `_make_observation` and
@@ -169,7 +188,7 @@ def resize_class_map(class_map, height, width):
     Measured on a perspective lane mask, 384x480 -> 192x240 with plain nearest keeps only
     69% of the RoadLine pixels that the coverage-preserving pass keeps (and 71% in the far
     half of the road, where the marking decides how early the car starts a turn). That is a
-    silent train/inference mismatch: `train_il_v9.ipynb` downscales its training masks with
+    silent train/inference mismatch: `train_il.ipynb` downscales its training masks with
     `downscale_labels`, which restores any output cell whose *area coverage* by a thin class
     exceeds `THIN_COVER_THRESH`. This function has to do the identical thing, or a
     warm-started policy sees a systematically thinner lane marking online than it was
@@ -237,6 +256,7 @@ def build_vehicle_state(vehicle, world_map, seg, previous_steer, previous_longit
     waypoint = world_map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving)
     if waypoint is None:
         lane_offset, heading_error, off_lane, is_junction = 0.0, 0.0, 1, 0
+        half_width = 1.75
     else:
         wp_tf = waypoint.transform
         dx = location.x - wp_tf.location.x
@@ -271,4 +291,9 @@ def build_vehicle_state(vehicle, world_map, seg, previous_steer, previous_longit
         "heading_error_rad": float(heading_error),
         "off_lane": off_lane,
         "is_junction": is_junction,
+        # Nua be rong lan THUC TE tai waypoint nay. Duoc dung lam thang chuan hoa cho
+        # `lane_offset_m` trong reward (xem CarlaLaneKeepEnv._compute_reward): lan cao toc
+        # Town04 rong hon lan pho Town01, nen "lech 0.5 m" khong cung mot muc do nguy hiem
+        # o hai noi. Cung la nguong ma `off_lane` dung, nen hai dai luong nhat quan.
+        "lane_half_width_m": float(half_width),
     }

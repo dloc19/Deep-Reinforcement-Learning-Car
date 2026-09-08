@@ -21,6 +21,12 @@ def camera_blueprint(world, type_id, cfg, width=None, height=None, sensor_tick=N
     synchronous mode a `sensor_tick` coarser than `fixed_delta_seconds` makes the sensor skip
     ticks, so `session.last_seg_class_map` would be a frame the car has already driven past.
     The RGB camera is preview-only and keeps the publish-rate tick.
+
+    LUU Y (do that tren CARLA 0.9.10, che do dong bo): `sensor_tick` cua camera RGB O DAY
+    KHONG duoc simulator ton trong — dat 1/15 s van nhan ~20.9 khung/giay, dung bang
+    sim_fps. Vi vay cho ghim nhip that su nam o `carla_session._on_rgb_frame`/`_on_seg_frame`
+    (xem `CarlaSession._due`), con gia tri nay chi la mot lop chan phu neu phien ban CARLA
+    khac co ton trong no.
     """
     bp = world.get_blueprint_library().find(type_id)
     bp.set_attribute("image_size_x", str(width if width else cfg.camera_width))
@@ -45,7 +51,37 @@ def rgb_image_to_jpeg(image, quality):
     return buf.tobytes() if ok else None
 
 
+# Anh segmentation di bang PNG, KHONG phai JPEG. Day la anh chi so lop (4 mau phang), khong
+# phai anh chup: JPEG luong tu hoa theo khoi 8x8 + lay mau chroma thua, nen no bien mot vung
+# mau phang thanh mot dam mau xap xi. Do tren mot khung Town03 that: sau JPEG q75 chi 37%
+# pixel con TRUNG DUNG bang mau, va ca ba lop Road/RoadLine/Sidewalk deu con 0% pixel dung
+# mau — rieng RoadLine chi rong 1-3 px nen bi vien JPEG an gan het. PNG vua khong mat mau
+# vua NHO HON tren loai anh nay: 16.8 KB so voi 26.1 KB cua JPEG q75 tren cung khung do.
+# Phia WPF khong can sua gi: BitmapImage tu nhan dang dinh dang tu chinh luong byte.
+PNG_COMPRESSION = 6      # 6 vs 9: nho hon 0.7 KB nua nhung ton gap doi CPU moi khung
+
+
+def class_map_to_png(class_map, color_lut):
+    """Ma hoa mot ban do class-id THO (raw tag CARLA) thanh PNG de hien thi.
+
+    `color_lut` la bang (256, 3) RGB tu `seg_palette.load_color_lut()` — bang 4 lop
+    (Background/Road/RoadLine/Sidewalk) ma model that su nhin thay.
+
+    Ve tu `class_map` chu khong tu `image` con co mot cai loi phu: khong phai goi
+    `image.convert()`, ma convert() ghi de raw_data TAI CHO — dung chung mot doi tuong anh
+    voi duong lay `last_seg_class_map` cua policy.
+    """
+    if color_lut is None:
+        return None
+    rgb = color_lut[class_map]                       # (H, W, 3) RGB
+    bgr = np.ascontiguousarray(rgb[:, :, ::-1])       # cv2 ghi theo thu tu BGR
+    ok, buf = cv2.imencode(".png", bgr, [cv2.IMWRITE_PNG_COMPRESSION, PNG_COMPRESSION])
+    return buf.tobytes() if ok else None
+
+
 def segmentation_image_to_jpeg(image, quality):
+    """Duong du phong: bang mau CityScapes cua chinh CARLA. Chi dung khi khong nap duoc bang
+    mau 4 lop cua du an (xem seg_palette.py)."""
     # convert() mutates raw_data in place (class id -> CityScapes RGB palette).
     image.convert(carla.ColorConverter.CityScapesPalette)
     bgra = np.frombuffer(image.raw_data, dtype=np.uint8).reshape((image.height, image.width, 4))

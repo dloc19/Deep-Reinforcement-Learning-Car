@@ -283,13 +283,97 @@
                 </Setter>
             </Style>
 
-            <!-- ===== ComboBox ===== -->
+            <!-- ===== ComboBox =====
+                 PHAI retemplate, khong the chi dat Setter. ControlTemplate mac dinh cua WPF
+                 cho ComboBox tu ve chrome rieng va BO QUA Background/BorderBrush — do la ly
+                 do ca ba ComboBox trong app (Town/Map, Thoi tiet, Spawn point) truoc day
+                 hien ra NEN TRANG giua giao dien toi. TextBox khong dinh loi nay vi template
+                 mac dinh cua no CO dung Background, nen chi can Setter la du. -->
             <Style TargetType="ComboBox">
                 <Setter Property="Background"      Value="{StaticResource InputBg}"/>
                 <Setter Property="Foreground"      Value="{StaticResource InkBrush}"/>
                 <Setter Property="BorderBrush"     Value="{StaticResource BorderBrush2}"/>
                 <Setter Property="BorderThickness"  Value="1"/>
                 <Setter Property="Padding"         Value="10,6"/>
+                <Setter Property="MinHeight"       Value="34"/>
+                <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                <Setter Property="VerticalContentAlignment"   Value="Center"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ComboBox">
+                            <Grid>
+                                <!-- Nen + vien ve o day chu khong trong ToggleButton, de
+                                     TemplateBinding tro thang toi ComboBox. -->
+                                <Border x:Name="Chrome"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="6"/>
+
+                                <!-- Nut bam trong suot phu toan bo, lo mo/dong dropdown. -->
+                                <ToggleButton Focusable="False" ClickMode="Press"
+                                              IsChecked="{Binding IsDropDownOpen, Mode=TwoWay,
+                                                          RelativeSource={RelativeSource TemplatedParent}}">
+                                    <ToggleButton.Template>
+                                        <ControlTemplate TargetType="ToggleButton">
+                                            <Border Background="Transparent"/>
+                                        </ControlTemplate>
+                                    </ToggleButton.Template>
+                                </ToggleButton>
+
+                                <!-- Noi dung + mui ten. IsHitTestVisible=False de cu bam roi
+                                     xuong ToggleButton ben duoi. -->
+                                <Grid Margin="{TemplateBinding Padding}" IsHitTestVisible="False">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ContentPresenter Grid.Column="0"
+                                                      Content="{TemplateBinding SelectionBoxItem}"
+                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                      ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                                      VerticalAlignment="Center"
+                                                      HorizontalAlignment="Left"/>
+                                    <Path x:Name="Arrow" Grid.Column="1"
+                                          Data="M0,0 L5,5 L10,0"
+                                          Stroke="{StaticResource InkSoftBrush}" StrokeThickness="1.6"
+                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                          VerticalAlignment="Center" Margin="10,1,0,0"/>
+                                </Grid>
+
+                                <Popup x:Name="PART_Popup" Placement="Bottom" Focusable="False"
+                                       AllowsTransparency="True" PopupAnimation="Fade"
+                                       IsOpen="{TemplateBinding IsDropDownOpen}">
+                                    <Border Background="{StaticResource SurfaceAltBrush}"
+                                            BorderBrush="{StaticResource BorderBrush2}"
+                                            BorderThickness="1" CornerRadius="6" Margin="0,4,0,0"
+                                            MinWidth="{Binding ActualWidth,
+                                                       RelativeSource={RelativeSource TemplatedParent}}">
+                                        <ScrollViewer MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                            <ItemsPresenter/>
+                                        </ScrollViewer>
+                                    </Border>
+                                </Popup>
+                            </Grid>
+
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chrome" Property="BorderBrush"
+                                            Value="{StaticResource InkFaintBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsDropDownOpen" Value="True">
+                                    <Setter TargetName="Chrome" Property="BorderBrush"
+                                            Value="{StaticResource AccentBrush}"/>
+                                    <Setter TargetName="Arrow" Property="Stroke"
+                                            Value="{StaticResource AccentBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.45"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
             <!-- ===== ComboBoxItem — dark dropdown ===== -->
@@ -332,6 +416,32 @@
                 <Setter Property="Padding"        Value="10,6"/>
                 <Setter Property="CaretBrush"     Value="{StaticResource AccentBrush}"/>
                 <Setter Property="SelectionBrush" Value="{StaticResource AccentSoftBrush}"/>
+            </Style>
+
+            <!-- ===== MeterBar — thanh do cho lenh dieu khien (lai / ga / phanh) =====
+                 Dung ProgressBar thay vi tu ve Rectangle + converter: ProgressBar da co san
+                 Minimum/Maximum/Value nen doi thang do (vd lai chay -1..1) chi la doi thuoc
+                 tinh, khong phai viet them converter. -->
+            <Style x:Key="MeterBar" TargetType="ProgressBar">
+                <Setter Property="Height"          Value="6"/>
+                <Setter Property="Minimum"         Value="0"/>
+                <Setter Property="Maximum"         Value="1"/>
+                <Setter Property="Foreground"      Value="{StaticResource AccentBrush}"/>
+                <Setter Property="Background"      Value="{StaticResource SurfaceDeepBrush}"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ProgressBar">
+                            <Grid>
+                                <Border Background="{TemplateBinding Background}" CornerRadius="3"/>
+                                <Border x:Name="PART_Track" Background="Transparent"/>
+                                <Border x:Name="PART_Indicator" CornerRadius="3"
+                                        Background="{TemplateBinding Foreground}"
+                                        HorizontalAlignment="Left"/>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
             <!-- ===== CardBorder ===== -->

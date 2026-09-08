@@ -12,7 +12,7 @@ import time
 import carla
 import numpy as np
 
-from . import cameras
+from . import cameras, seg_palette
 
 logger = logging.getLogger("bridge.carla_session")
 
@@ -29,9 +29,16 @@ class CarlaSession:
         self.seg_sensor = None
         self._original_settings = None
         self.last_rgb_jpeg = None
-        self.last_seg_jpeg = None
+        self.last_seg_image = None
         self.last_seg_class_map = None   # (H, W) uint8 raw class-id map — IL/DRL Autopilot input
-        self._last_seg_publish = 0.0
+        # Moc thoi gian cho khung KE TIEP duoc phep gui, mot moc cho moi kenh. Xem
+        # `_due()` ben duoi de biet vi sao la "moc ke tiep" chu khong phai "lan gui cuoi".
+        self._next_rgb_publish = 0.0
+        self._next_seg_publish = 0.0
+        # Bang mau 4 lop cua du an (Background/Road/RoadLine/Sidewalk) — dung cho kenh
+        # segmentation tren Live Drive de nguoi xem thay DUNG thu model nhin. Nap mot lan.
+        self.seg_color_lut, self.seg_class_names = seg_palette.load_color_lut(
+            cfg.deep_rl_carla_root)
 
     # ---------------------------------------------------------------- connect
     def connect(self):
@@ -43,8 +50,81 @@ class CarlaSession:
             self.load_town(self.cfg.town)
         else:
             self._enable_synchronous_mode()
+        # Ha timeout xuong muc "vong lap thuong" sau khi da noi/load xong — xem chu thich
+        # cua carla_tick_timeout_s trong config.py.
+        self.client.set_timeout(self.cfg.carla_tick_timeout_s)
+        self._cleanup_stale_ego()
         logger.info("Connected to CARLA %s:%d | map=%s",
                     self.cfg.carla_host, self.cfg.carla_port, self.map.name)
+
+    def _cleanup_stale_ego(self):
+        """Don xe (va camera gan tren no) mang role_name cua Bridge Server con sot lai.
+
+        CarlaUE4 giu actor song tiep sau khi tien trinh tao ra chung chet: dong Bridge
+        Server bang Ctrl+C thi `SimLoop.stop()` don sach, nhung bi kill cung (dong cua so,
+        may treo, IDE dung debug) thi chiec ego cu O LAI TRONG WORLD mai mai. No dung dung
+        ngay tren spawn point vua dung, nen lan chay sau bam "Bat dau phien" la dam vao
+        chinh no — do dung la loi "spawn point dang bi chiem" quan sat duoc khi chay lai bo
+        test end-to-end. Chi dong duoc voi role_name rieng cua minh (mac dinh "hero"), nen
+        khong dung toi xe cua Traffic Manager hay cua script khac.
+        """
+        try:
+            actors = self.world.get_actors()
+            stale = [v for v in actors.filter("vehicle.*")
+                     if v.attributes.get("role_name") == self.cfg.role_name]
+            if not stale:
+                return
+            stale_ids = set(v.id for v in stale)
+            for sensor in actors.filter("sensor.*"):
+                if sensor.parent is not None and sensor.parent.id in stale_ids:
+                    try:
+                        sensor.stop()
+                    except RuntimeError:
+                        pass
+                    sensor.destroy()
+            for vehicle in stale:
+                vehicle.destroy()
+            logger.warning("Da don %d xe '%s' con sot lai tu lan chay truoc (Bridge Server "
+                           "bi tat cung nen chua kip don).", len(stale), self.cfg.role_name)
+        except RuntimeError as exc:
+            logger.warning("Khong don duoc xe cu: %s", exc)
+
+    def simulator_reachable(self, timeout_s=2.0):
+        """CarlaUE4 con song khong? Hoi bang mot lenh RPC re nhat co, voi timeout NGAN.
+
+        Can rieng ham nay vi `world.tick()` dung `carla_tick_timeout_s`: mot lan tick hong
+        da ngon may giay, nen lay "tick hong N lan lien tiep" lam dau hieu mat ket noi thi
+        phai cho rat lau moi ket luan duoc. Mot lan hoi 2 giay o day tra loi ngay.
+
+        Luon hoi bang mot `carla.Client` MOI TINH, khong dung lai `self.client`. Khi
+        CarlaUE4 chet, socket RPC ben trong client cu hong han: no khong tu noi lai khi
+        CarlaUE4 bat len tro lai, nen hoi bang client cu thi cau tra loi mai mai la "chua
+        song" va Bridge Server se khong bao gio nhan ra CARLA da quay lai.
+        """
+        try:
+            probe = carla.Client(self.cfg.carla_host, self.cfg.carla_port)
+            probe.set_timeout(timeout_s)
+            probe.get_server_version()
+            return True
+        except Exception:
+            return False
+
+    def reconnect(self):
+        """Noi lai tu dau sau khi CarlaUE4 khoi dong lai.
+
+        Moi handle cu (world, map, ego, sensor) deu tro toi mot tien trinh khong con ton
+        tai, nen KHONG duoc goi destroy_*() len chung — chi vut di roi connect() lai. Cung
+        vi world cu da mat, `_original_settings` phai duoc quen di: settings can khoi phuc
+        luc shutdown() la settings cua world MOI.
+        """
+        self.ego = None
+        self.rgb_sensor = None
+        self.seg_sensor = None
+        self.last_rgb_jpeg = None
+        self.last_seg_image = None
+        self.last_seg_class_map = None
+        self._original_settings = None
+        self.connect()
 
     def _enable_synchronous_mode(self):
         settings = self.world.get_settings()
@@ -77,9 +157,14 @@ class CarlaSession:
     def load_town(self, town_name):
         self.destroy_cameras()
         self.destroy_ego()
-        self.world = self.client.load_world(town_name)
-        self.map = self.world.get_map()
-        self._enable_synchronous_mode()
+        # load_world() mat vai giay — nang timeout len muc "cham that" roi ha lai.
+        self.client.set_timeout(self.cfg.carla_timeout_s)
+        try:
+            self.world = self.client.load_world(town_name)
+            self.map = self.world.get_map()
+            self._enable_synchronous_mode()
+        finally:
+            self.client.set_timeout(self.cfg.carla_tick_timeout_s)
         logger.info("Loaded town %s", town_name)
 
     def set_weather(self, preset_name):
@@ -88,7 +173,7 @@ class CarlaSession:
             for name in dir(carla.WeatherParameters) if name and name[0].isupper()
         }
         if preset_name not in presets:
-            raise ValueError("Weather preset khong hop le: %s" % preset_name)
+            raise ValueError("Weather preset không hợp lệ: %s" % preset_name)
         self.world.set_weather(presets[preset_name])
 
     def current_town_short(self):
@@ -104,13 +189,31 @@ class CarlaSession:
             vehicle_bp.set_attribute("role_name", self.cfg.role_name)
         spawn_points = self.map.get_spawn_points()
         if not spawn_points:
-            raise RuntimeError("Map khong co spawn point nao.")
-        transform = (spawn_points[spawn_index]
-                     if 0 <= spawn_index < len(spawn_points)
-                     else random.choice(spawn_points))
-        self.ego = self.world.try_spawn_actor(vehicle_bp, transform)
+            raise RuntimeError("Bản đồ không có spawn point nào.")
+        # THU NHIEU SPAWN POINT, khong chi mot. `try_spawn_actor` tra ve None khi diem do
+        # dang bi chiem — va no BI CHIEM THUONG XUYEN: xe cua Traffic Manager dung do, hoac
+        # mot chiec ego cua lan chay truoc chua kip don. Ban truoc bao loi ngay tu lan thu
+        # dau, nghia la nguoi dung bam "Bat dau phien" va nhan mot thong bao that bai o dung
+        # cai diem mac dinh (index 0) — bam lai bao nhieu lan cung the. Gio: uu tien diem
+        # duoc yeu cau, sau do thu cac diem con lai theo thu tu ngau nhien.
+        candidates = []
+        if 0 <= spawn_index < len(spawn_points):
+            candidates.append(spawn_index)
+        others = [i for i in range(len(spawn_points)) if i not in candidates]
+        random.shuffle(others)
+        candidates.extend(others)
+
+        self.ego = None
+        for index in candidates:
+            self.ego = self.world.try_spawn_actor(vehicle_bp, spawn_points[index])
+            if self.ego is not None:
+                if index != spawn_index and 0 <= spawn_index < len(spawn_points):
+                    logger.warning("Spawn point %d dang bi chiem — da spawn o diem %d thay the.",
+                                   spawn_index, index)
+                break
         if self.ego is None:
-            raise RuntimeError("Khong spawn duoc xe — spawn point co the dang bi chiem.")
+            raise RuntimeError("Không spawn được xe — cả %d spawn point của bản đồ đều đang bị chiếm."
+                               % len(spawn_points))
         self.world.tick()
         self.spawn_cameras()
         return self.ego
@@ -155,8 +258,35 @@ class CarlaSession:
         self.rgb_sensor = None
         self.seg_sensor = None
 
+    def _due(self, next_at, now):
+        """Da den luc gui khung tiep theo chua? Tra ve (co_gui, moc_ke_tiep).
+
+        Cong don theo BOI SO cua chu ky (`next_at + interval`) chu khong lay
+        `now - lan_gui_cuoi >= interval`. Khac biet nay quyet dinh o day vi nhip goi ham
+        (moi world tick, 20 Hz) khong chia het cho nhip muon gui (publish_fps 15 Hz): kieu
+        "tru lan cuoi" lam moc bi day len mot tick MOI LAN gui, nen 15 Hz roi thanh 10 Hz —
+        do duoc that trong bo test end-to-end (telemetry 10.0 Hz voi --publish-fps 15).
+        Cong don giu dung pha, cho ra dung 3 khung moi 4 tick = 15 Hz.
+
+        `max(now, ...)`: neu tut lai qua mot chu ky (vd vua load town) thi dong bo lai theo
+        hien tai thay vi ban bu mot loat khung cho "kip".
+        """
+        if now < next_at:
+            return False, next_at
+        return True, max(now, next_at + 1.0 / self.cfg.publish_fps)
+
     def _on_rgb_frame(self, image):
         from . import protocol
+        # Ghim theo `publish_fps` NGAY TRUOC khi ma hoa JPEG. Khong the tin vao thuoc tinh
+        # `sensor_tick` cua camera: do duoc tren CARLA 0.9.10 o che do dong bo, camera RGB
+        # dat sensor_tick=1/15 van ban ~20.9 khung/giay, tuc dung bang sim_fps — no khong
+        # gioi han gi ca. Hau qua truoc khi sua: moi khung deu bi cv2.imencode (khoang
+        # 57 KB/khung) roi day vao WebSocket, ~1.1 MB/s cho mot luong hinh dang le chi
+        # 15 fps, va `--publish-fps` khong he co tac dung len kenh RGB.
+        now = time.time()
+        send, self._next_rgb_publish = self._due(self._next_rgb_publish, now)
+        if not send:
+            return
         jpeg = cameras.rgb_image_to_jpeg(image, self.cfg.jpeg_quality)
         if jpeg:
             self.last_rgb_jpeg = jpeg
@@ -178,12 +308,18 @@ class CarlaSession:
         #   - JPEG chi ma hoa + gui o `publish_fps`. Truoc day moi tick deu encode va gui,
         #     tuc ~175 khung/giay do vao WebSocket cho mot khung hinh chi de NGUOI xem.
         now = time.time()
-        if now - self._last_seg_publish < 1.0 / self.cfg.publish_fps:
+        send, self._next_seg_publish = self._due(self._next_seg_publish, now)
+        if not send:
             return
-        self._last_seg_publish = now
-        jpeg = cameras.segmentation_image_to_jpeg(image, self.cfg.jpeg_quality)
+        # Ve tu `last_seg_class_map` (raw tag) qua bang mau 4 lop cua du an. Chi khi khong
+        # nap duoc bang do moi quay ve CityScapesPalette cua CARLA — luc do anh hien thi se
+        # khac bo nhan model dung, va seg_palette.py da canh bao ro trong log.
+        if self.seg_color_lut is not None:
+            jpeg = cameras.class_map_to_png(self.last_seg_class_map, self.seg_color_lut)
+        else:
+            jpeg = cameras.segmentation_image_to_jpeg(image, self.cfg.jpeg_quality)
         if jpeg:
-            self.last_seg_jpeg = jpeg
+            self.last_seg_image = jpeg
             self.hub.publish_stream_binary(
                 protocol.encode_binary_frame(protocol.CHANNEL_SEG, jpeg))
 

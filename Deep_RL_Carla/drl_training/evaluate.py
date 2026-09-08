@@ -29,6 +29,17 @@ from policy.checkpoint_io import load_il_checkpoint  # noqa: E402
 from policy.observation import ObservationContract  # noqa: E402
 
 
+def resolve_target_speed(config, contract):
+    """`target_speed_mps=None` -> trung binh `speed_mps` cua tap train IL.
+
+    Doc tu chinh checkpoint thay vi go mot hang so, de neu train lai IL tren du lieu co
+    toc do khac thi reward tu bam theo, khong lech am tham."""
+    if config.get("target_speed_mps"):
+        return float(config["target_speed_mps"])
+    stats = getattr(contract, "norm_stats", {}) or {}
+    mean = stats.get("speed_mps", (8.0, 1.0))[0]
+    return float(max(mean, 1.0))
+
 def build_agent(algorithm, contract, config, device):
     if algorithm == "ppo":
         from policy.actor_critic import GaussianActor, ValueCritic
@@ -65,15 +76,33 @@ def main():
     il_checkpoint = load_il_checkpoint(il_checkpoint_path, map_location="cpu")
     contract = ObservationContract(il_checkpoint)
 
+    # `town` mac dinh gio la DANH SACH bon town (de train khong quen ban do nao). Danh gia
+    # thi phai co dinh MOT ban do: neu de nguyen, env se xoay vong sau moi
+    # `town_rotate_episodes` episode va tron ket qua cua nhieu ban do vao mot lo danh gia —
+    # con so trung binh khi do khong ung voi ban do nao ca.
+    if isinstance(config.get("town"), (list, tuple)):
+        chosen = config["town"][0]
+        print("[!] --town khong duoc dat va config liet ke %d ban do %s. Danh gia can MOT "
+              "ban do -> dung '%s'. Dat --town <TenBanDo> de chon ro." % (
+                  len(config["town"]), list(config["town"]), chosen))
+        config["town"] = chosen
+    # Chot chan lan hai: du sao cung tat xoay vong trong luc danh gia.
+    config["town_rotate_episodes"] = 10 ** 9
+
     agent = build_agent(algorithm, contract, config, device)
     agent.load_state_dict(checkpoint)
     agent.actor.eval()
     agent.critic.eval()
 
-    episodes = config["_episodes"] or 5
+    # Mac dinh lay tu `eval_episodes` cua config (30), khong phai 5: xem chu thich o
+    # config.py — o n=10 ti le va cham khong phan biet duoc hai checkpoint bat ky.
+    episodes = config["_episodes"] or config.get("eval_episodes", 30)
     deterministic = bool(config["_deterministic"])
     print("Danh gia %s: %d episode, deterministic=%s" % (algorithm.upper(), episodes, deterministic))
 
+    config["target_speed_mps"] = resolve_target_speed(config, contract)
+    print("target_speed = %.2f m/s (%.0f km/h) — moc \"day du diem toc do\"" % (
+        config["target_speed_mps"], config["target_speed_mps"] * 3.6))
     env = CarlaLaneKeepEnv(config, contract)
     results = []
     try:
@@ -118,7 +147,7 @@ def main():
                 "junction_steps": junction_steps,
                 "mean_abs_lane_offset": mean_offset,
                 "mean_abs_lane_offset_road": mean_offset_road,
-                "terminate_reason": reason,
+                "terminate_reason": reason, "town": env.current_town,
             })
             print("episode=%d reward=%.2f len=%d collided=%s mean|lane_offset|=%.3fm "
                   "(duong thuong %.3fm, nga tu %.0f%%) reason=%s" % (
@@ -142,7 +171,7 @@ def main():
         eval_run_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         fieldnames = ["algorithm", "episode", "reward", "length", "collided",
                       "off_lane_steps", "junction_steps", "mean_abs_lane_offset",
-                      "mean_abs_lane_offset_road", "terminate_reason",
+                      "mean_abs_lane_offset_road", "terminate_reason", "town",
                       "checkpoint", "eval_run_utc"]
         logger = CsvLogger(csv_path, fieldnames, mode="w")
         for row in results:

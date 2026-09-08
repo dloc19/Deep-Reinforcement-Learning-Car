@@ -7,6 +7,8 @@ RouteContext that already has a route to drive.
 
 from collections import namedtuple
 
+import carla
+
 from .base import ModeRuntime
 
 RouteContext = namedtuple("RouteContext", ["planner", "route"])
@@ -31,6 +33,11 @@ class AstarAutopilotMode(ModeRuntime):
         self.session = session
         self.tracker = self.route_context.planner.tracker_for(
             self.route_context.route, target_tolerance_m=self.cfg.astar_route_tolerance_m)
+        # Tuyen duoc tinh luc bam "Chon diem den", con day la luc bam "Bat dau lai" — giua
+        # hai thao tac do nguoi dung con nhin ban do vai giay, va neu xe dang chay thi no da
+        # vuot qua nhung node dau tuyen. Xem RouteTracker.resync_to(): khong goi thi tien do
+        # ket cung o 0 m va pure-pursuit bam mot node o phia sau xe.
+        self.tracker.resync_to(session.ego.get_transform())
         self.controller = self.router_plan.RoutePurePursuitController(
             target_speed_kmh=self.cfg.astar_target_speed_kmh, dt=1.0 / self.cfg.sim_fps)
         self.route_state = {}
@@ -39,11 +46,21 @@ class AstarAutopilotMode(ModeRuntime):
         vehicle = self.session.ego
         if vehicle is None or not vehicle.is_alive:
             return None
-        control = self.controller.compute_control(
+
+        self.route_state = self.tracker.update(vehicle.get_transform())
+
+        # TOI DICH THI DUNG HAN. Ban truoc luon goi compute_control() ke ca sau khi
+        # `route_completed`: pure-pursuit van bam node cuoi, va vi khong con node nao de
+        # tien toi nua no giu THROTTLE 1.0 vinh vien — do duoc that: route_completed=true,
+        # route_remaining_m=2.0, throttle=1.0, speed=0.15 km/h, xe ri ri huc vao vat can
+        # phia truoc sau khi da "toi noi". Su kien RouteCompleted van bao dung, chi co xe
+        # la khong chiu dung. Giong RouteLearnedAutopilotMode, tra ve phanh cung.
+        if self.route_state.get("route_completed"):
+            return carla.VehicleControl(throttle=0.0, steer=0.0, brake=1.0)
+
+        return self.controller.compute_control(
             self.route_context.planner.graph, self.route_context.route,
             self.tracker.target_index, vehicle, speed_limit_kmh=vehicle.get_speed_limit())
-        self.route_state = self.tracker.update(vehicle.get_transform())
-        return control
 
     def stop(self):
         self.tracker = None

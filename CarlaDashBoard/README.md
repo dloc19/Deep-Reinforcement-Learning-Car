@@ -10,9 +10,9 @@ CarlaDashBoard.Wpf/     WPF .NET 8 client — see below
 CarlaDashBoard.slnx
 ```
 
-**Status: Phase 0–4 of the roadmap are built and each half compiles/runs on its own.** They
-have **not** been tested end-to-end together against a live CARLA instance in this session —
-that needs `CarlaUE4.exe` running, which wasn't started here. See "What's verified" below.
+**Status: Phase 0–5 của roadmap đã dựng xong, và đã chạy end-to-end với CarlaUE4 thật.**
+Bộ test `bridge_server/tools/e2e_test.py` chạy 25 case trên một phiên CARLA sống (Town03 +
+Town02): 25/25 PASS, lặp lại hai lần. Xem "Đã kiểm chứng những gì" bên dưới.
 
 ## Run it for real
 
@@ -30,52 +30,43 @@ that needs `CarlaUE4.exe` running, which wasn't started here. See "What's verifi
    see the camera stream and toggle RGB/Seg/Split.
 5. To try A* Autopilot: go to **Route & Map**, wait for the graph to load, click a point on the
    road (or pick a spawn point / type x,y) → route appears with distance/ETA → **Bắt đầu lái**.
-6. To try IL/DRL Autopilot: train a checkpoint first (`Deep_RL_Carla/behavior_cloning/train_il_v9.ipynb`
+6. To try IL/DRL Autopilot: train a checkpoint first (`Deep_RL_Carla/behavior_cloning/train_il.ipynb`
    for IL, then `Deep_RL_Carla/drl_training/train_ppo.py`/`train_sac.py` for DRL — see that
    repo's own docs), point the bridge server at it with `--il-checkpoint-path` /
    `--drl-checkpoint-path` (defaults assume the standard output paths next to
    `Deep_RL_Carla/`), then pick **IL Autopilot** / **DRL Autopilot** → **Áp dụng mode** in
    Settings, same as any other mode. No destination needed — both are lane-keeping only.
 
-## What's verified in this session (no live CARLA available here)
+## Đã kiểm chứng những gì
 
-- **Bridge Server**: every module imports cleanly under the `carla_rl` env's Python 3.7 with
-  the real `carla` package present, **including** the `router_plan` bridge (Phase 3) and the
-  new `drl_training` bridge (Phase 4, `il_drl_bridge.py`) — both resolve their real classes
-  from the sibling `Deep_RL_Carla` repo folder (see `bridge_server/README.md`).
-- **IL/DRL Autopilot (Phase 4)**: exercised end-to-end with a synthetic checkpoint (matching
-  `train_il_v9.ipynb`'s exact key names/shapes) and fake CARLA state objects, offline —
-  `build_il_predictor()`/`build_drl_predictor()` load the checkpoint, remap IL weights onto
-  `GaussianActor` (`policy/il_compat.py`), and `LearnedAutopilotMode.tick()` runs the full
-  observation → forward pass → `VehicleControl` path and returns a valid, in-range action.
-  What this does **not** cover: a real trained checkpoint (none has been trained yet — no
-  `.pth`/`.pt` file exists in the repo), and the actual driving behaviour against a live
-  simulator — the missing-checkpoint path was only confirmed to fail *cleanly*
-  (`MODE_START_FAILED` with the path it looked for), not the driving itself.
-- **A\* Autopilot (Phase 3)**: not run against a live simulator, so `GlobalRoutePlanner`'s
-  graph build, `SetDestination`, and the drive loop have not been exercised with real CARLA
-  data.
-- **WPF app**: `dotnet build`/`dotnet build CarlaDashBoard.slnx` both succeed with 0
-  warnings/errors on `net8.0-windows` for all three screens, including the Settings screen
-  now offering IL/DRL Autopilot as selectable (no longer "Phase sau"). Rebranded to
-  **CarlaDashBoard** (project/namespace/folder rename) with a redesigned sidebar — app
-  mark + vector window icon, labelled nav items with an active-screen highlight driven by
-  `ShellViewModel.IsLiveDriveActive`/etc., and a persistent connection-status row (previously
-  only a tiny dot, and missing entirely from Route & Map) — plus a highlighted RGB/Seg/Split
-  toggle on Live Drive and a responsive (WrapPanel, not a fixed 4-column grid) mode-tile
-  layout on Settings so it no longer overflows at the window's stated `MinWidth="900"`.
-  Verified by actually launching the built exe and screenshotting all three screens after
-  driving the nav rail via UI Automation (not just eyeballing the default screen) — sidebar
-  active-state, camera-mode highlight, and mode-tile wrapping all confirmed visually, process
-  stayed alive with no exceptions. Since no bridge server was running, the Settings → Connect
-  flow, the camera stream, and every mode's actual drive loop were **not** exercised live.
+Chạy `bridge_server/tools/e2e_test.py` với CarlaUE4 0.9.10 đang mở (Town03, rồi đổi sang
+Town02 và quay lại) — **25/25 case PASS, chạy lại lần hai vẫn 25/25**, log server không có
+traceback nào. Số đo lấy từ chính lần chạy đó:
+
+- **Kênh dữ liệu**: RGB 15.2 fps (JPEG ~57 KB/khung), Seg 15.2 fps (PNG ~4 KB/khung),
+  telemetry 15.0 Hz — đúng bằng `--publish-fps 15`.
+- **`GET /maps/Town03`**: 7092 node / 11258 edge, 2.2 MB, dựng đồ thị hết 0.2 s. Town02:
+  1505 node. Tên trường khớp `Models/MapGraph.cs`.
+- **A\* Autopilot**: tuyến 170 m, xe tiến 158 m trong 20 s, tự phanh khi tới đích.
+- **IL Autopilot**: |lệch làn| trung bình **0.03 m** (max 0.05), chạy ở 5 Hz (`action_repeat=4`
+  suy từ `control_dt=0.2s` của checkpoint).
+- **DRL Autopilot** (`runs/best/ppo_latest.pt`, update=195, reward_mode=normalized): |lệch làn|
+  trung bình 0.15–0.17 m (max ~1.7) — kém IL rõ rệt, đúng như ghi nhận trước đó.
+- **Route + DRL Autopilot**: đi 215 m trong 30 s trên tuyến 653 m, bàn giao qua lại
+  policy ↔ planner, `RouteCompleted` bắn đúng lúc tới đích.
+- **Data Collection**: Traffic Manager lái 17 km/h, ghi 123 dòng `states.csv` + 25 ảnh RGB
+  (JPEG) + 25 ảnh Seg (PNG) trong 6 s.
+- **Đổi Town giữa phiên**: Town03 → Town02 → Town03, mỗi lần đều spawn lại xe và lái tiếp được.
+- **WPF app**: `dotnet build CarlaDashBoard.slnx` — 0 warning, 0 error trên `net8.0-windows`.
+  Phía WPF chưa có test tự động (xem "Known gaps").
 
 ## Known gaps going into Phase 5 (polish)
 
-- No trained IL/DRL checkpoint exists yet in the repo — Phase 4's code path is verified with
-  synthetic weights only (see above); train `best_il_model.pth` and a PPO/SAC checkpoint via
-  `Deep_RL_Carla/behavior_cloning/` and `Deep_RL_Carla/drl_training/` before relying on IL/DRL
-  Autopilot for a demo.
-- No automated tests on either side — validate manually against a running CARLA session
-  before relying on this for a demo, especially the A* Autopilot drive loop and the
-  `/maps/{town}` payload size on a full Town (thousands of nodes — untested for real).
+- Checkpoint DRL đang dùng (`drl_training/runs/best/ppo_latest.pt`) bám làn **kém hơn** IL
+  gốc (0.15 m so với 0.03 m, đo ở bảng trên). Muốn demo bám làn đẹp nhất thì chọn
+  **IL Autopilot**; DRL để so sánh.
+- Bộ test end-to-end (`bridge_server/tools/e2e_test.py`) phủ phía Bridge Server; phía WPF
+  vẫn chưa có test tự động — vẫn phải mở app bấm tay trước khi demo.
+- `ROUTE_DRL_AUTOPILOT` bàn giao vô-lăng cho pure-pursuit trước ngã tư ~24 m (12 node đồ
+  thị). Trên bản đồ nhiều ngã tư sát nhau như Town03, tỷ lệ thời gian policy thật sự cầm lái
+  vì thế thấp hơn trên đường trường — muốn quay video khoe policy thì chọn đoạn đường dài.

@@ -5,6 +5,17 @@ import time
 
 def build(session, mode, connected=True):
     ego = session.ego
+    # Mat ket noi CARLA thi moi so lieu dong hoc deu la so CU. `ego.is_alive` van tra ve
+    # True (gia tri da cache tu lan doc cuoi), nen neu cu di tiep thi dashboard hien mot
+    # toa do/toc do dong bang y nhu that. Cat o day: connected=False -> khong co xe.
+    if not connected:
+        return {
+            "type": "telemetry",
+            "t": time.time(),
+            "mode": mode.name if mode else "IDLE",
+            "connected": False,
+            "ego_alive": False,
+        }
     if ego is None or not ego.is_alive:
         return {
             "type": "telemetry",

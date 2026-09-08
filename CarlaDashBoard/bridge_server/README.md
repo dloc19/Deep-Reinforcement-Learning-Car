@@ -34,6 +34,30 @@ rationale and protocol spec: see the design doc artifact ("Carla Dashboard",
    `{"type":"StartSession"}` on `/control` first. Then `{"type":"SetMode","mode":"DATA_COLLECTION"}`
    hands the car to CARLA's Traffic Manager and starts publishing telemetry + camera frames.
 
+## Bộ test end-to-end (`tools/e2e_test.py`)
+
+Kiểm tra toàn bộ Bridge Server với **CarlaUE4 đang chạy thật** — không cần app WPF. Script tự
+khởi động `run_server.py` ở cổng 8799 (không đụng server thật ở 8765), nối cả `/control` lẫn
+`/stream`, chạy 25 test case rồi in bảng kết quả; exit code ≠ 0 nếu có case FAIL.
+
+```
+cd bridge_server
+C:\Users\dloc\miniconda3\envs\carla_rl\python.exe tools\e2e_test.py          # đầy đủ (~4 phút)
+C:\Users\dloc\miniconda3\envs\carla_rl\python.exe tools\e2e_test.py --quick  # bỏ phần đổi Town
+```
+
+Bao phủ: `ServerInfo`, `GET /maps/{town}` (kể cả 503 khi chưa sẵn sàng), mọi nhánh lỗi
+(`BAD_JSON`/`BAD_COMMAND`/`UNKNOWN_COMMAND`/`UNKNOWN_MODE`/`NO_SESSION`/`BAD_WEATHER`/
+`BAD_DESTINATION`/`NOT_RECORDABLE`), `StartSession`/`StopSession`, nhịp + định dạng của kênh
+RGB (JPEG) và Seg (PNG), nhịp telemetry, `SetWeather`, `SetCameraParams`, cả **năm** mode lái
+(có kiểm tra xe thực sự chạy và tiến trên tuyến), ghi dữ liệu ra CSV + ảnh, và `SetTown` qua
+lại giữa hai bản đồ. Log đầy đủ của server nằm ở `tools/e2e_server.log` (script đếm luôn số
+traceback trong đó).
+
+Script tự trả CARLA về chế độ bất đồng bộ khi kết thúc, kể cả khi nó phải giết tiến trình
+server con — nếu không, world sẽ nằm lại ở `synchronous_mode=True` mà không ai tick và cửa sổ
+CarlaUE4 trông y như bị treo.
+
 ## Manual smoke test without the WPF client
 
 `websockets` ships a CLI you can use from the same conda env while the server is running:
@@ -63,7 +87,7 @@ Then type e.g. `{"type":"StartSession"}` and press Enter — you should immediat
 
 - `bridge/il_drl_bridge.py` is the sibling-repo bridge to `Deep_RL_Carla/drl_training` (same
   shape as `route_planning.py` for `router_plan`) plus the two live-inference factories:
-  `build_il_predictor()` (an IL checkpoint from `behavior_cloning/train_il_v9.ipynb`) and
+  `build_il_predictor()` (an IL checkpoint from `behavior_cloning/train_il.ipynb`) and
   `build_drl_predictor()` (a PPO/SAC checkpoint from `drl_training/train_ppo.py` /
   `train_sac.py`, loaded the same way `drl_training/evaluate.py` does — including reading the
   observation contract off the **IL** checkpoint, since that's the only place
@@ -71,13 +95,23 @@ Then type e.g. `{"type":"StartSession"}` and press Enter — you should immediat
 - Both modes are **lane-keeping only** — no destination, they just drive off the live camera +
   scalar state every tick (`bridge/modes/learned_autopilot.py::LearnedAutopilotMode`, shared by
   both, since only "how one (seg, scalar) observation turns into an action" differs).
-- `CarlaSession` now keeps the raw semantic-segmentation class-id map (`last_seg_class_map`)
-  around each frame, read out **before** `segmentation_image_to_jpeg()` mutates it into the
-  CityScapes-palette JPEG used by the Live Drive stream — both consumers share the one sensor.
+- `CarlaSession` keeps the raw semantic-segmentation class-id map (`last_seg_class_map`) around
+  each frame — that map is the policy's image input, and the Live Drive stream is drawn from
+  the same map, so both consumers share the one sensor.
+- The Live Drive **Seg** channel is drawn with this project's own **4-class** palette
+  (`Background / Road / RoadLine / Sidewalk`, from `carla_collector/schema.py::SEG_COLOR_LUT`),
+  not CARLA's 13+-class `CityScapesPalette` — the point of that panel is to show what the model
+  actually sees. It is encoded as **PNG, not JPEG**: this is a class-index image, and JPEG's 8x8
+  quantisation smears flat colour regions (measured on a Town03 frame: only 37% of pixels kept
+  an exact palette colour, and `RoadLine` — 1-3 px wide — lost essentially all of its pixels).
+  PNG is both lossless and smaller here (16.8 KB vs 26.1 KB). See `bridge/seg_palette.py`.
 - Checkpoints are configured on the Bridge Server (CLI flags below), not from the WPF app —
   `--il-checkpoint-path` / `--drl-checkpoint-path` / `--drl-algorithm` / `--learned-autopilot-device`.
   Defaults, if not given: `{deep-rl-carla-root}/behavior_cloning/best_il_model.pth` and
-  `{deep-rl-carla-root}/drl_training/runs/{algo}_lane_keep/{algo}_latest.pt`. A missing
+  `{deep-rl-carla-root}/drl_training/runs/best/{algo}_latest.pt` — `runs/best/` is the stable
+  pointer to the checkpoint chosen for deployment (with a `README.txt` saying which run it came
+  from and why); see the comment on `drl_checkpoint_path` in `bridge/config.py` for why the
+  default is no longer `runs/{algo}_lane_keep/`. A missing
   checkpoint fails the `SetMode` call with a clear `MODE_START_FAILED` error (path it looked
   for included) instead of hanging or crashing the sim loop.
 - Loaded models are cached in `SimLoop` (keyed by resolved checkpoint path, same idea as the
@@ -85,7 +119,7 @@ Then type e.g. `{"type":"StartSession"}` and press Enter — you should immediat
 
 ## What's intentionally NOT here yet
 
-- IL/DRL training itself (that's `behavior_cloning/train_il_v9.ipynb` and
+- IL/DRL training itself (that's `behavior_cloning/train_il.ipynb` and
   `drl_training/train_ppo.py`/`train_sac.py`, both in the sibling `Deep_RL_Carla` repo) — this
   package only runs an already-trained checkpoint live.
 - This is **not** a drop-in replacement for `data_collection/collect_data.py` — see the

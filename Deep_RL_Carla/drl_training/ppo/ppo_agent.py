@@ -98,6 +98,23 @@ class PPOAgent:
         gradient nao cham vao no. Day la khuyen nghi §12 cua notebook IL: de critic hoc
         xong ham gia tri quanh hanh vi IL TRUOC, roi moi cho phep policy dich chuyen.
         """
+        # `explained_variance` = 1 - Var(returns - V)/Var(returns), do TREN gia tri V cua
+        # luc rollout (truoc update nay) — dung dinh nghia Stable-Baselines3 dung.
+        #
+        # Vi sao can no ben canh `value_loss`: `value_loss` la sai so TUYET DOI, ma thang do
+        # cua `returns` thay doi han theo tung rollout (mot rollout day episode dam som co
+        # return nho va tan mat hon han mot rollout toan episode song het gio). Do tren
+        # runs/ppo_v1, tuong quan giua value_loss va reward trung binh cua chinh update do
+        # la r = -0.89: value_loss chu yeu do THANH PHAN EPISODE quyet dinh, khong phai
+        # chat luong critic — nen no khong dung de theo doi critic. explained_variance
+        # chuan hoa theo phuong sai cua return nen so sanh duoc giua cac update:
+        #     ~1.0 critic giai thich gan het bien thien return
+        #     ~0.0 critic khong hon gi viec doan hang so
+        #     < 0  critic con te hon doan hang so (dau hieu hong that su)
+        returns_var = float(np.var(returns))
+        explained_variance = (float("nan") if returns_var < 1e-8 else
+                              1.0 - float(np.var(returns - buffer.values)) / returns_var)
+
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
         stats = {"policy_loss": [], "value_loss": [], "entropy": [], "approx_kl": [], "clip_fraction": []}
 
@@ -155,7 +172,9 @@ class PPOAgent:
                     and np.mean(epoch_kls) > 1.5 * self.target_kl):
                 break  # policy moved too far this update — stop remaining epochs early
 
-        return {key: float(np.mean(values)) if values else 0.0 for key, values in stats.items()}
+        summary = {key: float(np.mean(values)) if values else 0.0 for key, values in stats.items()}
+        summary["explained_variance"] = explained_variance
+        return summary
 
     def state_dict(self):
         return {

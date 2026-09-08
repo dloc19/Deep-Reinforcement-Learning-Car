@@ -121,6 +121,37 @@
                                VerticalAlignment="Center"/>
                 </StackPanel>
 
+                <!-- ===== Trang thai RONG =====
+                     Truoc day khi chua chon dich thi ca cot phai trong tron, nguoi dung
+                     khong biet phai lam gi tiep. Ba buoc duoi thay cho khoang trong do va
+                     bien mat ngay khi co tuyen. -->
+                <StackPanel Margin="0,12,0,0"
+                            Visibility="{Binding HasRoute, Converter={StaticResource BoolToVis},
+                                         ConverterParameter=inverse}">
+                    <Border CornerRadius="8" Background="{StaticResource SurfaceAltBrush}"
+                            Padding="14,12">
+                        <StackPanel>
+                            <TextBlock Text="Chưa chọn điểm đến" FontWeight="SemiBold"
+                                       Foreground="{StaticResource InkBrush}" Margin="0,0,0,10"/>
+                            <TextBlock Style="{StaticResource SoftText}" FontSize="11"
+                                       TextWrapping="Wrap" Margin="0,0,0,7">
+                                <Run Text="1." Foreground="{StaticResource RouteBrush}" FontWeight="Bold"/>
+                                <Run Text="  Bắt đầu phiên ở màn hình Settings để có xe."/>
+                            </TextBlock>
+                            <TextBlock Style="{StaticResource SoftText}" FontSize="11"
+                                       TextWrapping="Wrap" Margin="0,0,0,7">
+                                <Run Text="2." Foreground="{StaticResource RouteBrush}" FontWeight="Bold"/>
+                                <Run Text="  Click lên đường trong bản đồ, hoặc chọn Spawn point ở trên."/>
+                            </TextBlock>
+                            <TextBlock Style="{StaticResource SoftText}" FontSize="11"
+                                       TextWrapping="Wrap">
+                                <Run Text="3." Foreground="{StaticResource RouteBrush}" FontWeight="Bold"/>
+                                <Run Text="  A* tìm tuyến ngắn nhất, rồi chọn cách lái."/>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
                 <!-- Route data -->
                 <StackPanel Visibility="{Binding HasRoute, Converter={StaticResource BoolToVis}}" Margin="0,12,0,0">
                     <Border CornerRadius="8" Background="{StaticResource SurfaceAltBrush}"

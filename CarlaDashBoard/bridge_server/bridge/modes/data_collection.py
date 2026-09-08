@@ -34,6 +34,25 @@ CSV_FIELDS = [
 
 SAVE_IMAGE_EVERY_N_FRAMES = 5  # ~4 img/s at sim_fps=20 — plenty for a live "sanity" preview
 
+# .../CarlaDashBoard — moc de neo `record_output_dir` khi no la duong dan tuong doi.
+DASHBOARD_ROOT = Path(__file__).resolve().parents[3]
+
+
+def resolve_output_dir(record_output_dir):
+    """Duong dan tuong doi duoc neo vao thu muc CarlaDashBoard, KHONG phai thu muc lam viec.
+
+    `Path("dataset_live").resolve()` phu thuoc vao cho nguoi dung dung luc go lenh: chay
+    `python bridge_server\\run_server.py` tu CarlaDashBoard thi du lieu vao
+    `CarlaDashBoard/dataset_live`, con `cd bridge_server` roi chay `python run_server.py`
+    (dung cach README bao) lai tao ra mot thu muc dataset_live THU HAI trong bridge_server/.
+    Quan sat duoc that khi chay bo test end-to-end: ban ghi khong nam cho nguoi dung tuong.
+    Duong dan tuyet doi thi van duoc ton trong nguyen ven.
+    """
+    path = Path(record_output_dir).expanduser()
+    if not path.is_absolute():
+        path = DASHBOARD_ROOT / path
+    return path.resolve()
+
 
 class DataCollectionMode(ModeRuntime):
     name = "DATA_COLLECTION"
@@ -94,7 +113,15 @@ class DataCollectionMode(ModeRuntime):
         if self.session and self.session.ego is not None:
             try:
                 self.session.ego.set_autopilot(False)
-            except RuntimeError:
+            except (RuntimeError, IndexError):
+                # IndexError("invalid unordered_map<K, T> key") la cach Traffic Manager bao
+                # "toi khong con giu dang ky cua chiec xe nay" — gap that khi doi mode luc
+                # dang chay Data Collection. No KHONG phai RuntimeError nen ban truoc lot
+                # qua except, bay len tan `_cmd_SetMode` va lam ca lenh SetMode that bai
+                # (COMMAND_FAILED) SAU KHI mode moi da start() xong: mode moi bi bo roi,
+                # con mode cu thi da huy het sensor — dashboard ket o mot trang thai khong
+                # ai lai ma van bao dang o Data Collection. Bo autopilot khong duoc thi
+                # cung khong sao: mode tiep theo se tu ap lenh dieu khien cua no moi tick.
                 pass
 
     def status_extra(self):
@@ -114,7 +141,7 @@ class DataCollectionMode(ModeRuntime):
             return
         stamp = time.strftime("%Y%m%d_%H%M%S")
         town = self.session.current_town_short()
-        self.session_dir = Path(self.cfg.record_output_dir).expanduser().resolve() / f"{town}_{stamp}"
+        self.session_dir = resolve_output_dir(self.cfg.record_output_dir) / f"{town}_{stamp}"
         (self.session_dir / "rgb").mkdir(parents=True, exist_ok=True)
         (self.session_dir / "seg").mkdir(parents=True, exist_ok=True)
         self.csv_file = (self.session_dir / "states.csv").open("w", newline="", encoding="utf-8")
@@ -163,6 +190,9 @@ class DataCollectionMode(ModeRuntime):
             if self.session.last_rgb_jpeg:
                 (self.session_dir / "rgb" / f"{snapshot.frame}.jpg").write_bytes(
                     self.session.last_rgb_jpeg)
-            if self.session.last_seg_jpeg:
-                (self.session_dir / "seg" / f"{snapshot.frame}.jpg").write_bytes(
-                    self.session.last_seg_jpeg)
+            # .png, khong phai .jpg: khung segmentation duoc ma hoa PNG (anh chi so lop 4
+            # mau — xem cameras.class_map_to_png). Ghi byte PNG vao file ten .jpg thi mo
+            # bang thu vien nao cung phai doan lai dinh dang.
+            if self.session.last_seg_image:
+                (self.session_dir / "seg" / f"{snapshot.frame}.png").write_bytes(
+                    self.session.last_seg_image)

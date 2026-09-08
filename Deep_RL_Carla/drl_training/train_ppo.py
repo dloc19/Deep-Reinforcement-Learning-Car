@@ -36,6 +36,24 @@ from ppo.ppo_agent import PPOAgent  # noqa: E402
 from ppo.rollout_buffer import RolloutBuffer  # noqa: E402
 
 
+_EPISODE_FIELDS_EXTRA = ["mean_abs_lane_offset", "mean_abs_lane_offset_road",
+                         "junction_steps", "town"]
+_EMPTY_EPISODE_STATS = {"mean_abs_lane_offset": float("nan"),
+                        "mean_abs_lane_offset_road": float("nan"),
+                        "junction_steps": 0, "town": ""}
+
+
+def resolve_target_speed(config, contract):
+    """`target_speed_mps=None` -> trung binh `speed_mps` cua tap train IL.
+
+    Doc tu chinh checkpoint thay vi go mot hang so, de neu train lai IL tren du lieu co
+    toc do khac thi reward tu bam theo, khong lech am tham."""
+    if config.get("target_speed_mps"):
+        return float(config["target_speed_mps"])
+    stats = getattr(contract, "norm_stats", {}) or {}
+    mean = stats.get("speed_mps", (8.0, 1.0))[0]
+    return float(max(mean, 1.0))
+
 def resolve_device(config):
     if config["device"] == "cuda" and torch.cuda.is_available():
         return torch.device("cuda")
@@ -64,8 +82,12 @@ def main():
                       ["traffic_light_%s" % v for v in contract.traffic_light_vocab])
     print("Observation contract: %d scalar features: %s" % (contract.scalar_feature_dim, feature_names))
 
+    log_std_init = config.get("log_std_init")
+    if log_std_init is None:
+        log_std_init = contract.default_log_std()
+        print("log_std lay tu checkpoint IL (action_std=%s)" % (contract.action_std,))
     actor = GaussianActor(contract.scalar_feature_dim, contract.num_classes,
-                          log_std_init=config.get("log_std_init", (-3.0, -1.5)))
+                          log_std_init=log_std_init)
     critic = ValueCritic(contract.scalar_feature_dim, contract.num_classes)
     print("log_std khoi tao: %s -> std %s" % (
         [round(v, 2) for v in actor.log_std.detach().tolist()],
@@ -88,17 +110,26 @@ def main():
         update = config_start_update = state.get("update", 0)
         print("Resume tu:", config["_resume"], "| update =", config_start_update)
 
+    config["target_speed_mps"] = resolve_target_speed(config, contract)
+    print("target_speed = %.2f m/s (%.0f km/h) — moc \"day du diem toc do\"" % (
+        config["target_speed_mps"], config["target_speed_mps"] * 3.6))
     env = CarlaLaneKeepEnv(config, contract)
 
     obs_h = config.get("obs_height", config["height"])
     obs_w = config.get("obs_width", config["width"])
     buffer = RolloutBuffer(config["n_steps"], (obs_h, obs_w), contract.scalar_feature_dim, 2, device)
 
+    # `mean_abs_lane_offset_road` la chi so CHINH de cham bam lan — chinh xac hon nhieu ti le
+    # va cham, vi no la trung binh tren hang nghin buoc thay vi dem vai su kien. Truoc day chi
+    # `evaluate.py` do no, nen mot lan train nham cai thien bam lan khong the theo doi duoc gi
+    # cho toi tan buoc eval cuoi. `town` de doc duoc ket qua theo tung ban do khi xoay vong.
     episode_log = CsvLogger(output_dir / "episode_log.csv",
-                             ["update", "global_step", "episode_reward", "episode_len", "terminate_reason"])
+                             ["update", "global_step", "episode_reward", "episode_len",
+                              "terminate_reason"] + _EPISODE_FIELDS_EXTRA)
     update_log = CsvLogger(output_dir / "update_log.csv",
                             ["update", "global_step", "policy_loss", "value_loss", "entropy",
-                             "approx_kl", "clip_fraction", "steps_per_sec", "mean_episode_reward"])
+                             "approx_kl", "clip_fraction", "explained_variance", "steps_per_sec",
+                             "mean_episode_reward"])
 
     obs, _info = env.reset()
     episode_reward, episode_len = 0.0, 0
@@ -127,22 +158,30 @@ def main():
                 # to treat "ran out of time" as equivalent to "crashed", which is wrong and
                 # measurably hurts training in any time-limited env (well-documented issue,
                 # e.g. Pardo et al., "Time Limits in Reinforcement Learning").
+                train_reward = reward
                 if truncated and not terminated:
                     bootstrap_value = agent.value_of(next_obs["seg"], next_obs["scalar"])
-                    reward = reward + config["gamma"] * bootstrap_value
+                    train_reward = reward + config["gamma"] * bootstrap_value
 
-                buffer.add(obs["seg"], obs["scalar"], raw_action, log_prob, reward, value, done)
+                buffer.add(obs["seg"], obs["scalar"], raw_action, log_prob, train_reward, value, done)
+                # `reward` chu KHONG phai `train_reward`: gia tri bootstrap o tren la mot thu
+                # thuat cua ham loss, khong phai diem xe kiem duoc. Cong no vao day thi moi
+                # episode ket thuc vi HET GIO se duoc cong them V(s) (hang tram diem) trong
+                # khi episode ket thuc vi VA CHAM thi khong — `mean_episode_reward` va
+                # episode_log.csv (nguon cua bieu do trong bao cao) se so hai loai episode
+                # tren hai thang do khac nhau, va duong cong se di len chi vi xe song lau hon.
                 episode_reward += reward
                 episode_len += 1
                 global_step += 1
                 obs = next_obs
 
                 if done:
-                    episode_log.log({
-                        "update": update, "global_step": global_step,
-                        "episode_reward": episode_reward, "episode_len": episode_len,
-                        "terminate_reason": info.get("terminate_reason", "time_limit"),
-                    })
+                    stats_ep = info.get("episode_stats", _EMPTY_EPISODE_STATS)
+                    episode_log.log(dict(stats_ep,
+                        update=update, global_step=global_step,
+                        episode_reward=episode_reward, episode_len=episode_len,
+                        terminate_reason=info.get("terminate_reason", "time_limit"),
+                    ))
                     recent_episode_rewards.append(episode_reward)
                     recent_episode_rewards = recent_episode_rewards[-20:]
                     episode_reward, episode_len = 0.0, 0
@@ -167,12 +206,14 @@ def main():
                 "policy_loss": stats["policy_loss"], "value_loss": stats["value_loss"],
                 "entropy": stats["entropy"], "approx_kl": stats["approx_kl"],
                 "clip_fraction": stats["clip_fraction"],
+                "explained_variance": stats["explained_variance"],
                 "steps_per_sec": config["n_steps"] / elapsed, "mean_episode_reward": mean_reward,
             })
-            print("update=%d step=%d%s policy_loss=%.4f value_loss=%.4f kl=%.4f mean_ep_reward=%.2f (%.1f steps/s)" % (
-                update, global_step, " [critic-warmup]" if freeze_actor else "",
-                stats["policy_loss"], stats["value_loss"], stats["approx_kl"],
-                mean_reward, config["n_steps"] / elapsed))
+            print("update=%d step=%d%s policy_loss=%.4f value_loss=%.4f kl=%.4f ev=%.3f "
+                  "mean_ep_reward=%.2f (%.1f steps/s)" % (
+                      update, global_step, " [critic-warmup]" if freeze_actor else "",
+                      stats["policy_loss"], stats["value_loss"], stats["approx_kl"],
+                      stats["explained_variance"], mean_reward, config["n_steps"] / elapsed))
 
             is_last_update = update == n_updates - 1
             if (update + 1) % config["save_every_updates"] == 0 or is_last_update:
