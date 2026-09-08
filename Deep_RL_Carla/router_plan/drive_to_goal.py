@@ -147,7 +147,11 @@ def main():
         world.tick()
 
         try:
-            route = planner.plan(vehicle.get_location(), goal_waypoint.transform.location)
+            # Truyen ca huong xe: xem GlobalRoutePlanner.snap_to_graph() — chieu chi theo
+            # khoang cach co the bat vao mot lan cat ngang khi diem xuat phat gan nga tu.
+            start_transform = vehicle.get_transform()
+            route = planner.plan(start_transform.location, goal_waypoint.transform.location,
+                                  start_heading_deg=start_transform.rotation.yaw)
         except RouteNotFoundError as exc:
             raise SystemExit(str(exc))
         print("Tim thay duong A*: %d node." % len(route))

@@ -150,7 +150,10 @@ def chay_mot_trial(env, agent, planner, controller_factory, mode, start_idx, goa
 
     vehicle = env.vehicle
     try:
-        route = planner.plan(vehicle.get_transform().location, goal_loc)
+        # Truyen ca huong xe — xem GlobalRoutePlanner.snap_to_graph().
+        start_transform = vehicle.get_transform()
+        route = planner.plan(start_transform.location, goal_loc,
+                             start_heading_deg=start_transform.rotation.yaw)
     except RouteNotFoundError:
         return None
     tracker = planner.tracker_for(route, target_tolerance_m=toler_m)

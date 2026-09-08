@@ -84,6 +84,35 @@ class RouteTracker(object):
         self.target_index = 1 if len(route) > 1 else 0
         self.completed = len(route) == 1  # a route that is just the start node is already "there"
 
+    def resync_to(self, vehicle_transform):
+        """Dat lai node muc tieu ve node dau tien NAM PHIA TRUOC xe, thay vi luon la node 1.
+
+        Goi mot lan ngay truoc khi bat dau lai, khi tuyen co the da duoc tinh tu truoc do
+        mot luc. `update()` chi tien muc tieu khi xe DEN GAN node hien tai (duoi
+        `tolerance_m`, mac dinh 3 m); neu xe da vuot qua node do roi thi dieu kien do khong
+        bao gio con dung nua, va tracker KET DINH VINH VIEN o node 1: `route_progress_m`
+        dung yen o 0 trong khi xe van chay, con pure-pursuit thi bam mot node o phia sau.
+
+        Do that tren Town03 (CarlaDashBoard, bo test end-to-end): dat dich luc xe dang chay
+        28 km/h roi bam "Bat dau lai" sau 2 giay — xe da di 16.4 m, tuc vuot node muc tieu
+        13 m — tien do dung o 0.0 m suot 12 giay va xe chay thang toi ria ban do. Voi do tre
+        ~0 giay thi khong sao (tien 93 m trong cung 12 giay), nen loi chi lo ra khi nguoi
+        dung thao tac o toc do nguoi that: chon dich, nhin tuyen, roi moi bam lai.
+
+        Chi bao gio TIEN VE PHIA TRUOC, khong bao gio lui: mot tuyen di vong lai gan chinh
+        no (rat hay gap trong pho o Town03) co the co node cu nam gan xe hon node sap toi,
+        va lui lai la tu xoa tien do da di duoc.
+        """
+        loc = vehicle_transform.location
+        last_index = len(self.route) - 1
+        nearest_index = min(range(len(self._locations)),
+                            key=lambda i: location_distance(loc, self._locations[i]))
+        # Node gan nhat coi nhu DA di qua — muc tieu la node ke tiep.
+        self.target_index = max(self.target_index, min(nearest_index + 1, last_index))
+        if (self.target_index == last_index and
+                location_distance(loc, self._locations[last_index]) < self.tolerance_m):
+            self.completed = True
+
     def update(self, vehicle_transform):
         """Call once per tick with the vehicle's current `carla.Transform`. Returns a dict
         with exactly the keys in `carla_collector.schema.ROUTE_FIELDS`."""

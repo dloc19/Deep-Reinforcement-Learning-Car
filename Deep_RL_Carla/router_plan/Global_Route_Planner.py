@@ -30,6 +30,10 @@ from router_plan.goal_selection import resolve_goal
 from router_plan.graph_builder import RouteGraph
 from router_plan.route_tracker import RouteTracker
 
+# Import SAU `graph_builder`: chinh no la cho dat data_collection/ vao sys.path (xem dau
+# file do), nen thu tu hai dong nay khong doi cho nhau duoc.
+from carla_collector.geometry import location_distance, normalize_angle
+
 
 class RouteNotFoundError(RuntimeError):
     """Raised when a start/goal location cannot be snapped onto the graph, or no A* path
@@ -58,20 +62,60 @@ class GlobalRoutePlanner(object):
         self.world_map = world_map
         self.graph = RouteGraph(resolution_m, lane_change_cost).build(world_map)
 
-    def snap_to_graph(self, location):
+    # Ban kinh quet node khi biet huong xe, va do lech huong toi da con chap nhan duoc.
+    # 8 m du de phu ca lan ke ben tren duong nhieu lan; 60 do du rong de khong loai nham
+    # mot doan duong cong, nhung du hep de loai han lan cat ngang trong nga tu (~90 do).
+    START_SNAP_RADIUS_M = 8.0
+    START_SNAP_MAX_YAW_DIFF_DEG = 60.0
+
+    def snap_to_graph(self, location, heading_deg=None):
         """Return the `node_id` closest to `location` (a `carla.Location`), or `None` if it
-        cannot be projected onto a `Driving` lane at all."""
+        cannot be projected onto a `Driving` lane at all.
+
+        `heading_deg` (yaw cua xe, do) la TUY CHON nhung nen truyen khi diem can chieu la vi
+        tri hien tai cua mot chiec xe dang chay. Ly do: `map.get_waypoint(project_to_road)`
+        tra ve tam lan GAN NHAT VE KHOANG CACH, khong quan tam lan do di huong nao. Trong
+        nga tu — noi nhieu lan chong len nhau — no thuong xuyen chon mot lan CAT NGANG.
+
+        Do that tren Town03: xe o (-84.1, -3.7) yaw -178 do (dang chay theo huong -x), thi
+        waypoint chieu duoc co yaw 56 do — lech 127 do so voi xe. Tuyen A* vi vay bat dau
+        bang mot lan di huong khac han, con xe thi chay thang tiep; `RouteTracker` chi tien
+        khi xe toi gan node muc tieu nen no KET DINH o 0 m, khong loi, khong canh bao:
+        dashboard hien "tien do 0 m" trong khi xe chay toi luc dam vao dau do. Tai hien
+        3/3 lan trong bo test end-to-end cua CarlaDashBoard khi dat dich luc xe dang chay.
+
+        Khi co `heading_deg`: quet cac node trong ban kinh `START_SNAP_RADIUS_M`, chi giu
+        node lech huong duoi `START_SNAP_MAX_YAW_DIFF_DEG` so voi xe, roi lay node gan nhat
+        trong so do. Khong co node nao hop huong thi quay ve cach chieu cu (vd xe dang o
+        giua bai dat trong, hoac dang do nguoc dau) — van co tuyen de di con hon khong co.
+        """
         waypoint = self.world_map.get_waypoint(
             location, project_to_road=True, lane_type=carla.LaneType.Driving)
-        if waypoint is None:
-            return None
-        return self.graph.nearest_node(waypoint)
+        fallback_id = self.graph.nearest_node(waypoint) if waypoint is not None else None
+        if heading_deg is None:
+            return fallback_id
 
-    def plan(self, start_location, goal_location):
+        best_id, best_distance = None, float("inf")
+        for node_id, transform in self.graph.nodes.items():
+            distance = location_distance(transform.location, location)
+            if distance > self.START_SNAP_RADIUS_M or distance >= best_distance:
+                continue
+            yaw_diff = abs(normalize_angle(transform.rotation.yaw - heading_deg))
+            if yaw_diff > self.START_SNAP_MAX_YAW_DIFF_DEG:
+                continue
+            best_id, best_distance = node_id, distance
+        return best_id if best_id is not None else fallback_id
+
+    def plan(self, start_location, goal_location, start_heading_deg=None):
         """Return the ordered `node_id` list for the shortest route from `start_location` to
         `goal_location` (both `carla.Location`). Raises `RouteNotFoundError` if either
-        endpoint cannot be snapped to the graph, or if A* finds no connecting path."""
-        start_id = self.snap_to_graph(start_location)
+        endpoint cannot be snapped to the graph, or if A* finds no connecting path.
+
+        Truyen `start_heading_deg` = yaw cua xe khi diem xuat phat la mot chiec xe dang chay
+        — xem `snap_to_graph()` de biet vi sao no quan trong. Diem DICH khong can (va khong
+        nen) co huong: nguoi dung chi mot cho tren ban do, khong chi chieu di toi no.
+        """
+        start_id = self.snap_to_graph(start_location, heading_deg=start_heading_deg)
         goal_id = self.snap_to_graph(goal_location)
         if start_id is None or goal_id is None:
             raise RouteNotFoundError(

@@ -45,6 +45,17 @@ lập, làm sau khi cần đến navigation thật sự thay vì chỉ demo/vali
   cần một bước export riêng cho từng map và dễ lệch nếu map thay đổi.)
 - **Chọn đích**: giữ đúng convention đã có ở `data_collection/carla_collector/config.py`
   (`--goal-spawn-index` / `--goal-x`/`--goal-y`/`--goal-z`) — tái dùng, không phát minh lại.
+- **Chiếu điểm xuất phát có xét HƯỚNG xe** (`plan(..., start_heading_deg=...)`):
+  `map.get_waypoint(project_to_road=True)` chỉ chọn tâm làn *gần nhất về khoảng cách*, nên
+  trong ngã tư nó hay bắt vào một làn cắt ngang — đo trên Town03: xe yaw −178°, waypoint chiếu
+  được có yaw 56°. Tuyến khi đó bắt đầu bằng một làn đi hướng khác hẳn. Khi có
+  `start_heading_deg`, `snap_to_graph()` quét các node trong bán kính 8 m và chỉ giữ node lệch
+  hướng dưới 60°. Không truyền tham số này thì hành vi giữ nguyên như cũ.
+- **`RouteTracker.resync_to(transform)`**: gọi một lần ngay trước khi bắt đầu lái, nếu tuyến
+  được tính từ trước đó một lúc. `update()` chỉ tiến mục tiêu khi xe *đến gần* node hiện tại
+  (dưới `tolerance_m`); xe đã vượt qua node đó rồi thì tracker kẹt vĩnh viễn ở node 1 —
+  `route_progress_m` đứng yên ở 0 trong khi xe vẫn chạy, và pure-pursuit bám một node ở phía
+  sau. Tái hiện được 100% khi đặt đích lúc xe đang chạy 28 km/h rồi 2 giây sau mới bấm lái.
 
 ## Các bước triển khai
 
