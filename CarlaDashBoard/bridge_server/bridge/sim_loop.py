@@ -40,6 +40,9 @@ class SimLoop:
         self.map_graph_json_cache = {}            # town short name -> pre-encoded JSON bytes
         self.route_context = None                 # RouteContext from the last SetDestination
         self._route_completed_notified = False
+        self._route_stalled_notified = False
+        self._route_progress_mark = None
+        self._route_progress_since = 0.0
 
         # Doc san tren SIM THREAD de server.py._server_info_payload() (chay tren luong
         # asyncio) khong phai goi vao API CARLA — xem chu thich o ham do.
@@ -78,9 +81,26 @@ class SimLoop:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=10.0)
-        if self.current_mode:
-            self.current_mode.stop()
+        self._stop_current_mode()
         self.session.shutdown()
+
+    def _stop_current_mode(self):
+        """Dung mode dang chay, KHONG bao gio de ngoai le tu no thoat ra ngoai.
+
+        `ModeRuntime.stop()` co hop dong la "must not raise", nhung no goi vao API CARLA
+        nen loi van co the tu duoi bay len — do that: `set_autopilot(False)` cua Data
+        Collection nem `IndexError: invalid unordered_map<K, T> key` khi Traffic Manager
+        khong con giu dang ky chiec xe. Ngoai le do lam ca `SetMode` that bai SAU KHI mode
+        moi da start() xong, tuc bo roi mode moi va giu lai mot mode cu da huy het sensor.
+        Don mode cu la viec "don dep", khong duoc phep quyet dinh so phan cua lenh dang chay.
+        """
+        if self.current_mode is None:
+            return
+        try:
+            self.current_mode.stop()
+        except Exception:                                          # noqa: BLE001
+            logger.exception("Mode %s stop() raised — bo qua de tiep tuc", self.current_mode.name)
+        self.current_mode = None
 
     def submit(self, command: dict):
         self.commands.put(command)
@@ -88,7 +108,12 @@ class SimLoop:
     # ------------------------------------------------------------------ main loop
     def _run(self):
         logger.info("Sim loop running (target %.0f Hz)", self.cfg.sim_fps)
-        last_publish = 0.0
+        # Moc cho lan phat telemetry KE TIEP, cong don theo boi so cua chu ky. Ban truoc so
+        # `now - last_publish >= publish_interval`, ma vong lap nay chi kiem tra moi tick
+        # (20 Hz): voi publish_fps=15 (chu ky 0.0667s) thi tick o 0.05s luon "chua den han",
+        # nen thuc te chi phat duoc moi tick thu hai — 10 Hz, do duoc that trong bo test
+        # end-to-end. Cong don giu dung pha va cho ra dung 3 khung moi 4 tick.
+        next_publish = 0.0
         publish_interval = 1.0 / self.cfg.publish_fps
         # GHIM THEO THOI GIAN THUC. `fixed_delta_seconds` chi noi mot tick dai bao nhieu
         # trong the gioi mo phong; no khong ep vong lap nay cho. Khong ghim thi world.tick()
@@ -141,7 +166,8 @@ class SimLoop:
                     self._check_route_completion()
 
             now = time.time()
-            if now - last_publish >= publish_interval:
+            if now >= next_publish:
+                next_publish = max(now, next_publish + publish_interval)
                 try:
                     payload = telemetry.build(self.session, self.current_mode, connected=tick_ok)
                 except RuntimeError:
@@ -149,7 +175,6 @@ class SimLoop:
                     payload = {"type": "telemetry", "t": now, "mode": "IDLE",
                                "connected": False, "ego_alive": False}
                 self.hub.publish_stream_text(json.dumps(payload))
-                last_publish = now
 
     # ------------------------------------------------------------------ mat ket noi CARLA
     _RECONNECT_INTERVAL_S = 3.0
@@ -234,18 +259,14 @@ class SimLoop:
         # ngay tu tick dau (route_completed=1) va mode phanh cung 1.0 vinh vien — xe dung
         # im, khong loi nao hien ra o dau ca. Quan sat duoc that: brake=1.00, speed=0,
         # active_controller="arrived". Nen dung mode va bo tuyen cu TRUOC khi spawn.
-        if self.current_mode is not None:
-            self.current_mode.stop()
-            self.current_mode = None
+        self._stop_current_mode()
         self.route_context = None
-        self._route_completed_notified = False
+        self._reset_route_watch()
         self.session.spawn_ego(spawn_index)
         self.hub.publish_control_text(protocol.dumps("SessionStarted"))
 
     def _cmd_StopSession(self, command):
-        if self.current_mode is not None:
-            self.current_mode.stop()
-            self.current_mode = None
+        self._stop_current_mode()
         self.session.destroy_cameras()
         self.session.destroy_ego()
         self.hub.publish_control_text(protocol.dumps("SessionStopped"))
@@ -282,10 +303,9 @@ class SimLoop:
             self.hub.publish_control_text(protocol.error("MODE_START_FAILED", str(exc)))
             return
 
-        if self.current_mode is not None:
-            self.current_mode.stop()
+        self._stop_current_mode()
         self.current_mode = new_mode
-        self._route_completed_notified = False
+        self._reset_route_watch()
         self.hub.publish_control_text(protocol.dumps("ModeChanged", mode=mode_name))
 
     def _cmd_SetWeather(self, command):
@@ -298,11 +318,9 @@ class SimLoop:
 
     def _cmd_SetTown(self, command):
         town = command.get("town")
-        if self.current_mode is not None:
-            self.current_mode.stop()
-            self.current_mode = None
+        self._stop_current_mode()
         self.route_context = None  # route was planned on the old town's graph — no longer valid
-        self._route_completed_notified = False
+        self._reset_route_watch()
         self.session.load_town(town)
         self._refresh_spawn_points()
         self._ensure_town_graph()
@@ -327,8 +345,15 @@ class SimLoop:
             return
 
         router_plan = self._get_router_plan()
+        # Truyen CA HUONG xe, khong chi vi tri. Trong nga tu, phep chieu chi theo khoang
+        # cach hay bat vao mot lan cat ngang, va tuyen se bat dau di huong khac han huong
+        # xe dang chay: RouteTracker khong bao gio toi duoc node muc tieu nen tien do dung
+        # yen o 0 m trong khi xe van chay — khong loi nao hien ra. Xem docstring cua
+        # `GlobalRoutePlanner.snap_to_graph` (router_plan) de biet so lieu do duoc.
+        ego_transform = self.session.ego.get_transform()
         try:
-            route = planner.plan(self.session.ego.get_location(), goal_location)
+            route = planner.plan(ego_transform.location, goal_location,
+                                 start_heading_deg=ego_transform.rotation.yaw)
         except router_plan.RouteNotFoundError as exc:
             self.hub.publish_control_text(protocol.error("ROUTE_NOT_FOUND", str(exc)))
             return
@@ -339,7 +364,7 @@ class SimLoop:
         target_speed_mps = max(self.cfg.astar_target_speed_kmh / 3.6, 0.1)
 
         self.route_context = RouteContext(planner=planner, route=route)
-        self._route_completed_notified = False
+        self._reset_route_watch()
         self.hub.publish_control_text(protocol.dumps(
             "RouteComputed",
             polyline=polyline,
@@ -475,12 +500,63 @@ class SimLoop:
         except Exception:
             logger.exception("Khong build duoc A* graph cho %s — /maps/%s se tra 503 den khi thu lai.", town, town)
 
+    # Xe chay nhanh hon nguong nay ma tien do tuyen khong nhuc nhich qua ngan ay giay thi
+    # coi nhu da lac khoi tuyen. 15s la du dai de khong bao nham luc dung den do hay nhuong
+    # duong (xe dung han thi toc do duoi nguong, dong ho khong chay).
+    _ROUTE_STALL_SECONDS = 15.0
+    _ROUTE_STALL_MIN_SPEED_KMH = 5.0
+
+    def _reset_route_watch(self):
+        self._route_completed_notified = False
+        self._route_stalled_notified = False
+        self._route_progress_mark = None
+        self._route_progress_since = 0.0
+
     def _check_route_completion(self):
-        if not isinstance(self.current_mode, AstarAutopilotMode) or self._route_completed_notified:
+        """Theo doi tuyen dang chay: bao khi toi dich, va bao khi KET DINH.
+
+        Phan "ket dinh" quan trong khong kem phan "toi dich": RouteTracker chi tien khi xe
+        di gan node muc tieu, nen mot lan lac tuyen (policy bo lo khuc re, hoac tuyen tinh
+        tu mot vi tri xe da di qua) lam tien do dung yen VINH VIEN trong khi xe van chay —
+        khong ngoai le, khong log, dashboard chi hien mot con so khong doi. Do dung la thu
+        lam nguoi xem demo tuong dashboard bi treo. Bao mot lan, ro rang, roi thoi.
+        """
+        route_state = getattr(self.current_mode, "route_state", None)
+        if not route_state:
             return
-        if self.current_mode.route_state.get("route_completed"):
-            self._route_completed_notified = True
-            self.hub.publish_control_text(protocol.dumps("RouteCompleted", success=True))
+
+        if route_state.get("route_completed"):
+            if not self._route_completed_notified:
+                self._route_completed_notified = True
+                self.hub.publish_control_text(protocol.dumps("RouteCompleted", success=True))
+            return
+
+        progress = route_state.get("route_progress_m")
+        if progress is None or self._route_stalled_notified:
+            return
+        now = time.time()
+        if self._route_progress_mark is None or progress > self._route_progress_mark + 1.0:
+            self._route_progress_mark = progress
+            self._route_progress_since = now
+            return
+
+        velocity = self.session.ego.get_velocity()
+        speed_kmh = 3.6 * (velocity.x ** 2 + velocity.y ** 2 + velocity.z ** 2) ** 0.5
+        if speed_kmh < self._ROUTE_STALL_MIN_SPEED_KMH:
+            self._route_progress_since = now      # dung cho den do — khong tinh la ket dinh
+            return
+        if now - self._route_progress_since < self._ROUTE_STALL_SECONDS:
+            return
+
+        self._route_stalled_notified = True
+        logger.warning("Tuyen ket dinh: tien do dung o %.1f m suot %.0fs trong khi xe chay "
+                       "%.0f km/h — xe da lac khoi tuyen.", progress,
+                       self._ROUTE_STALL_SECONDS, speed_kmh)
+        self.hub.publish_control_text(protocol.error(
+            "ROUTE_STALLED",
+            "Xe đã lạc khỏi tuyến: tiến độ đứng yên ở %.0f m suốt %.0f giây trong khi xe vẫn "
+            "chạy. Hãy chọn lại điểm đến (Route & Map) để tính tuyến mới từ vị trí hiện tại."
+            % (progress, self._ROUTE_STALL_SECONDS)))
 
     def _cmd_SetCameraParams(self, command):
         self.session.apply_camera_params(

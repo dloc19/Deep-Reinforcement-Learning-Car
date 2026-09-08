@@ -39,6 +39,22 @@ _PLANNER_COMMANDS = ("LEFT", "RIGHT", "CHANGELANELEFT", "CHANGELANERIGHT")
 # giat. 20 tick = 1 giay o sim_fps 20 — du de ra han khoi nga tu roi moi tra lai cho policy.
 _HANDOFF_HOLD_TICKS = 20
 
+# Nhin TRUOC bao nhieu node tren tuyen de biet sap toi nga tu. Do phan giai graph mac dinh
+# la 2 m, nen 12 node ~ 24 m ~ 2.4 giay o 35 km/h.
+#
+# Vi sao can nhin truoc: hai tin hieu ban giao con lai deu la tin hieu MUON. `route_command`
+# cua RouteTracker mo ta canh xe VUA DI QUA (no quet cac canh tu lan update truoc den node
+# da qua), con `is_junction` chi bat khi xe DA O TRONG nga tu. Ca hai deu chi bao sau khi
+# xe da lao vao nga tu o toc do hanh trinh, theo mot quy dao thang do policy dat ra — luc
+# do pure-pursuit phai be lai rat gap va thuong khong kip. Ket qua do duoc trong bo test
+# end-to-end: xe di thang qua khuc re, tien do tuyen dung yen o 0 m suot 25 giay
+# (canh bao ROUTE_STALLED) trong khi xe chay 34 km/h ra khoi tuyen.
+_PLANNER_LOOKAHEAD_NODES = 12
+
+# Loai canh doi hoi y dinh di lai ma policy khong the doan tu anh — thay truoc bao nhieu
+# cung nen giao cho pure-pursuit.
+_PLANNER_EDGE_TYPES = ("JUNCTION_BRANCH", "LANE_CHANGE_LEFT", "LANE_CHANGE_RIGHT")
+
 
 class RouteLearnedAutopilotMode(ModeRuntime):
     """`predict` va `contract` giong het LearnedAutopilotMode (do
@@ -76,6 +92,9 @@ class RouteLearnedAutopilotMode(ModeRuntime):
         self.session = session
         self.tracker = self.route_context.planner.tracker_for(
             self.route_context.route, target_tolerance_m=self.cfg.astar_route_tolerance_m)
+        # Xem chu thich cung cho o AstarAutopilotMode.start(): tuyen co the da duoc tinh tu
+        # vai giay truoc, luc do xe da vuot qua may node dau.
+        self.tracker.resync_to(session.ego.get_transform())
         self.controller = self.router_plan.RoutePurePursuitController(
             target_speed_kmh=self.cfg.astar_target_speed_kmh, dt=1.0 / self.cfg.sim_fps)
         self.route_state = {}
@@ -88,12 +107,23 @@ class RouteLearnedAutopilotMode(ModeRuntime):
         self._driver = "policy"
 
     # ------------------------------------------------------------------ chuyen giao
+    def _junction_ahead(self):
+        """Tuyen co canh nga tu / doi lan nao trong `_PLANNER_LOOKAHEAD_NODES` node toi
+        khong? Day la tin hieu ban giao SOM, xem chu thich cua hang so do."""
+        edge_types = getattr(self.tracker, "edge_types", None)
+        if not edge_types:
+            return False
+        start = max(0, self.tracker.target_index - 1)
+        window = edge_types[start:start + _PLANNER_LOOKAHEAD_NODES]
+        return any(edge_type in _PLANNER_EDGE_TYPES for edge_type in window)
+
     def _planner_should_drive(self, state, route_state):
-        """Pure-pursuit cam lai khi (a) tuyen yeu cau re/doi lan, hoac (b) xe dang o trong
-        nga tu. Dieu kien (b) can rieng vi `route_command` doi ngay tai canh nga tu con xe
-        thi con o giua no them mot doan."""
+        """Pure-pursuit cam lai khi (a) sap toi mot nga tu/doan doi lan tren tuyen, (b) tuyen
+        vua yeu cau re/doi lan, hoac (c) xe dang o trong nga tu. Ba dieu kien la ba moc thoi
+        gian khac nhau cua cung mot su kien — truoc, trong va sau — va deu can: (a) de kip
+        vao cua, (b)(c) de khong tra lai vo-lang giua chung."""
         command = route_state.get("route_command", "LANEFOLLOW")
-        if command in _PLANNER_COMMANDS or state.get("is_junction"):
+        if command in _PLANNER_COMMANDS or state.get("is_junction") or self._junction_ahead():
             self._planner_hold = _HANDOFF_HOLD_TICKS
         elif self._planner_hold > 0:
             self._planner_hold -= 1

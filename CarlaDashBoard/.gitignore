@@ -1,6 +1,9 @@
 CarlaDashBoard.Wpf/bin/
 CarlaDashBoard.Wpf/obj/
 bridge_server/dataset_live/
+dataset_live/
+# Log cua bo test end-to-end (tools/e2e_test.py) — sinh lai moi lan chay
+bridge_server/tools/e2e_server.log
 bridge_server/__pycache__/
 bridge_server/bridge/**/__pycache__/
 *.pyc

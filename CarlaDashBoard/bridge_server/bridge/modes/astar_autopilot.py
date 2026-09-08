@@ -33,6 +33,11 @@ class AstarAutopilotMode(ModeRuntime):
         self.session = session
         self.tracker = self.route_context.planner.tracker_for(
             self.route_context.route, target_tolerance_m=self.cfg.astar_route_tolerance_m)
+        # Tuyen duoc tinh luc bam "Chon diem den", con day la luc bam "Bat dau lai" — giua
+        # hai thao tac do nguoi dung con nhin ban do vai giay, va neu xe dang chay thi no da
+        # vuot qua nhung node dau tuyen. Xem RouteTracker.resync_to(): khong goi thi tien do
+        # ket cung o 0 m va pure-pursuit bam mot node o phia sau xe.
+        self.tracker.resync_to(session.ego.get_transform())
         self.controller = self.router_plan.RoutePurePursuitController(
             target_speed_kmh=self.cfg.astar_target_speed_kmh, dt=1.0 / self.cfg.sim_fps)
         self.route_state = {}

@@ -1,4 +1,5 @@
 from .base import ModeRuntime
+from .idle import IdleMode
 from .data_collection import DataCollectionMode
 from .astar_autopilot import AstarAutopilotMode, RouteContext
 from .learned_autopilot import LearnedAutopilotMode
@@ -16,5 +17,5 @@ def build(mode_name, cfg):
     if mode_name == protocol.MODE_DATA_COLLECTION:
         return DataCollectionMode(cfg)
     if mode_name == protocol.MODE_IDLE:
-        return ModeRuntime()
+        return IdleMode()
     raise ValueError("Mode không hợp lệ: %s" % mode_name)

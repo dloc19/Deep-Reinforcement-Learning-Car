@@ -21,6 +21,12 @@ def camera_blueprint(world, type_id, cfg, width=None, height=None, sensor_tick=N
     synchronous mode a `sensor_tick` coarser than `fixed_delta_seconds` makes the sensor skip
     ticks, so `session.last_seg_class_map` would be a frame the car has already driven past.
     The RGB camera is preview-only and keeps the publish-rate tick.
+
+    LUU Y (do that tren CARLA 0.9.10, che do dong bo): `sensor_tick` cua camera RGB O DAY
+    KHONG duoc simulator ton trong — dat 1/15 s van nhan ~20.9 khung/giay, dung bang
+    sim_fps. Vi vay cho ghim nhip that su nam o `carla_session._on_rgb_frame`/`_on_seg_frame`
+    (xem `CarlaSession._due`), con gia tri nay chi la mot lop chan phu neu phien ban CARLA
+    khac co ton trong no.
     """
     bp = world.get_blueprint_library().find(type_id)
     bp.set_attribute("image_size_x", str(width if width else cfg.camera_width))

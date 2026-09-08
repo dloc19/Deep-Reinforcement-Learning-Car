@@ -34,6 +34,30 @@ rationale and protocol spec: see the design doc artifact ("Carla Dashboard",
    `{"type":"StartSession"}` on `/control` first. Then `{"type":"SetMode","mode":"DATA_COLLECTION"}`
    hands the car to CARLA's Traffic Manager and starts publishing telemetry + camera frames.
 
+## Bộ test end-to-end (`tools/e2e_test.py`)
+
+Kiểm tra toàn bộ Bridge Server với **CarlaUE4 đang chạy thật** — không cần app WPF. Script tự
+khởi động `run_server.py` ở cổng 8799 (không đụng server thật ở 8765), nối cả `/control` lẫn
+`/stream`, chạy 25 test case rồi in bảng kết quả; exit code ≠ 0 nếu có case FAIL.
+
+```
+cd bridge_server
+C:\Users\dloc\miniconda3\envs\carla_rl\python.exe tools\e2e_test.py          # đầy đủ (~4 phút)
+C:\Users\dloc\miniconda3\envs\carla_rl\python.exe tools\e2e_test.py --quick  # bỏ phần đổi Town
+```
+
+Bao phủ: `ServerInfo`, `GET /maps/{town}` (kể cả 503 khi chưa sẵn sàng), mọi nhánh lỗi
+(`BAD_JSON`/`BAD_COMMAND`/`UNKNOWN_COMMAND`/`UNKNOWN_MODE`/`NO_SESSION`/`BAD_WEATHER`/
+`BAD_DESTINATION`/`NOT_RECORDABLE`), `StartSession`/`StopSession`, nhịp + định dạng của kênh
+RGB (JPEG) và Seg (PNG), nhịp telemetry, `SetWeather`, `SetCameraParams`, cả **năm** mode lái
+(có kiểm tra xe thực sự chạy và tiến trên tuyến), ghi dữ liệu ra CSV + ảnh, và `SetTown` qua
+lại giữa hai bản đồ. Log đầy đủ của server nằm ở `tools/e2e_server.log` (script đếm luôn số
+traceback trong đó).
+
+Script tự trả CARLA về chế độ bất đồng bộ khi kết thúc, kể cả khi nó phải giết tiến trình
+server con — nếu không, world sẽ nằm lại ở `synchronous_mode=True` mà không ai tick và cửa sổ
+CarlaUE4 trông y như bị treo.
+
 ## Manual smoke test without the WPF client
 
 `websockets` ships a CLI you can use from the same conda env while the server is running:
