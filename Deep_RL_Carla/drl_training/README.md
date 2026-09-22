@@ -6,12 +6,6 @@ Pipeline của đồ án (xem `../README.md` cho bức tranh tổng): **1) segme
 toán độc lập** — **PPO** (`train_ppo.py`) và **SAC** (`train_sac.py`) — cùng warm-start từ
 một checkpoint IL, cùng dùng chung env/reward/hợp đồng quan sát, khác nhau ở cách fine-tune.
 
-> ⚠️ **Tôi (Claude) không có CARLA/Python trong môi trường viết code này** nên chưa tự chạy
-> được module này với server thật. Cả hai thuật toán được viết cẩn thận theo đúng quy ước đã
-> có trong repo (`data_collection/carla_collector`, hợp đồng quan sát trong
-> `docs/csv_fields_by_task.md`) và rà soát logic kỹ, nhưng hãy coi lần chạy đầu tiên là một
-> smoke test (mục "Kiểm thử lần đầu" bên dưới) trước khi chạy train dài.
-
 ## Phạm vi
 
 Chỉ **bám làn** (lane-keeping), không điều hướng theo tuyến A*: `../router_plan/Global_Route_Planner.py`

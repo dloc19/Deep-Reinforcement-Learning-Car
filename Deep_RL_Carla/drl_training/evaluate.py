@@ -98,7 +98,8 @@ def main():
     # config.py — o n=10 ti le va cham khong phan biet duoc hai checkpoint bat ky.
     episodes = config["_episodes"] or config.get("eval_episodes", 30)
     deterministic = bool(config["_deterministic"])
-    print("Danh gia %s: %d episode, deterministic=%s" % (algorithm.upper(), episodes, deterministic))
+    print("Danh gia %s: %d episode, deterministic=%s, thoi tiet=%s" % (
+        algorithm.upper(), episodes, deterministic, config.get("weather") or "mac dinh cua ban do"))
 
     config["target_speed_mps"] = resolve_target_speed(config, contract)
     print("target_speed = %.2f m/s (%.0f km/h) — moc \"day du diem toc do\"" % (
@@ -148,6 +149,7 @@ def main():
                 "mean_abs_lane_offset": mean_offset,
                 "mean_abs_lane_offset_road": mean_offset_road,
                 "terminate_reason": reason, "town": env.current_town,
+                "weather": env.weather_name,
             })
             print("episode=%d reward=%.2f len=%d collided=%s mean|lane_offset|=%.3fm "
                   "(duong thuong %.3fm, nga tu %.0f%%) reason=%s" % (
@@ -171,7 +173,7 @@ def main():
         eval_run_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         fieldnames = ["algorithm", "episode", "reward", "length", "collided",
                       "off_lane_steps", "junction_steps", "mean_abs_lane_offset",
-                      "mean_abs_lane_offset_road", "terminate_reason", "town",
+                      "mean_abs_lane_offset_road", "terminate_reason", "town", "weather",
                       "checkpoint", "eval_run_utc"]
         logger = CsvLogger(csv_path, fieldnames, mode="w")
         for row in results:

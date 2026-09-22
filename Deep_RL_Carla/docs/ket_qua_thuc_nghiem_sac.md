@@ -31,17 +31,28 @@ trong nút giao, waypoint tham chiếu nhảy sang nhánh cắt nên phép đo m
 
 Cột SAC lấy từ `sac_b`, checkpoint SAC tốt nhất trong sáu lần chạy.
 
+Town01/Town03/Town04/Town05 được đo ngày 5–6/9/2026; Town02 được bổ sung ngày 11/9/2026 theo
+đúng giao thức đó (30 episode, tất định, thời tiết mặc định của bản đồ) — trước đó Town02 nằm
+trong tập huấn luyện nhưng chưa hề có lô đánh giá nào, ở cả hai nhánh.
+
 | Bản đồ | PPO v4 va chạm | SAC va chạm | PPO lệch làn (m) | SAC lệch làn (m) |
 |---|---|---|---|---|
 | Town01 | **0,0 %** | 83,3 % | 0,129 | 0,145 |
+| Town02 | **6,7 %** | 100,0 % | 0,191 | 0,231 |
 | Town03 | **16,7 %** | 43,3 % | 0,375 | **0,187** |
 | Town04 | **33,3 %** | 36,7 % | 0,099 | **0,081** |
 | Town05 | **13,3 %** | 43,3 % | 0,148 | 0,192 |
-| Trung bình | **15,8 %** | 51,7 % | 0,188 | **0,151** |
+| Trung bình | **14,0 %** | 61,3 % | 0,189 | **0,167** |
 
-Kết quả chia hai chiều rõ rệt: **SAC bám làn tốt hơn PPO khoảng 20 %** (0,151 so với 0,188 m)
-nhưng **va chạm nhiều hơn 3,3 lần** (51,7 % so với 15,8 %). Vì an toàn là ràng buộc cứng của
+Kết quả chia hai chiều rõ rệt: **SAC bám làn tốt hơn PPO khoảng 12 %** (0,167 so với 0,189 m)
+nhưng **va chạm nhiều hơn 4,4 lần** (61,3 % so với 14,0 %). Vì an toàn là ràng buộc cứng của
 bài toán điều khiển, PPO v4 được chọn làm mô hình triển khai.
+
+Riêng Town02, SAC va chạm ở **cả 30/30 episode**. Đây không phải sự cố của một lô đo: ngay từ
+giai đoạn hâm nóng critic, khi actor còn bị đóng băng, Town02 đã ở mức 96 % va chạm
+(`drl_training_sac/runs/sac_f/baseline_frozen_actor.json`). Town02 và Town01 cùng là thị trấn
+nhỏ hai làn, tức nhánh SAC hỏng nặng nhất đúng ở loại bản đồ đơn giản nhất — nơi PPO đạt
+100 % và 93,3 % hoàn thành tuyến.
 
 ## 3. Kết quả là giới hạn cấu trúc, không phải do chưa tinh chỉnh
 

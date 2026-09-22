@@ -53,6 +53,15 @@ except ImportError as exc:
         "module DRL (xem docs/manual_thu_thap_du_lieu.md muc 2)."
     ) from exc
 
+# Cac preset thoi tiet cua CARLA 0.9.10 (`carla.WeatherParameters`), dung cho config
+# `weather` / `--weather`. Liet ke ra day de `--weather` co the kiem tra ten NGAY khi phan
+# tich tham so — go sai mot chu ma phai doi nap xong Town04 moi biet thi rat ton thoi gian.
+WEATHER_PRESETS = (
+    "ClearNoon", "CloudyNoon", "WetNoon", "WetCloudyNoon", "MidRainyNoon",
+    "HardRainNoon", "SoftRainNoon", "ClearSunset", "CloudySunset", "WetSunset",
+    "WetCloudySunset", "MidRainSunset", "HardRainSunset", "SoftRainSunset",
+)
+
 
 class CarlaLaneKeepEnv(object):
     """Duck-typed Gym-like env: `reset() -> (obs, info)`, `step(action) -> (obs, reward,
@@ -98,6 +107,7 @@ class CarlaLaneKeepEnv(object):
         self.world = self.client.get_world()
         self.map = self.world.get_map()
         self._apply_synchronous_mode()
+        self._apply_weather()
         self.spectator = (self.world.get_spectator()
                           if self.cfg.get("spectator_follow", False) else None)
         self._tick_seconds = 1.0 / float(self.cfg.get("fps", 20.0))
@@ -185,6 +195,7 @@ class CarlaLaneKeepEnv(object):
         self.world = self.client.get_world()
         self.map = self.world.get_map()
         self._apply_synchronous_mode()
+        self._apply_weather()
         self.spectator = (self.world.get_spectator()
                           if self.cfg.get("spectator_follow", False) else None)
         self.spawn_points = self.map.get_spawn_points()
@@ -214,6 +225,15 @@ class CarlaLaneKeepEnv(object):
     def current_town(self):
         name = self.map.name.replace("\\", "/").split("/")[-1]
         return name
+
+    @property
+    def weather_name(self):
+        """Ten preset thoi tiet dang dat, hoac 'default' neu config khong dat gi.
+
+        `evaluate.py` ghi gia tri nay vao CSV: mot bang ket qua nhieu thoi tiet ma khong co
+        cot thoi tiet trong CHINH file du lieu thi vai thang sau khong ai con kiem chung
+        duoc dong nao ung voi dieu kien nao."""
+        return str(self.cfg.get("weather") or "default")
 
     def _tick(self):
         """Mot tick vat ly, kem hai thu chi phuc vu NGUOI XEM.
@@ -274,6 +294,29 @@ class CarlaLaneKeepEnv(object):
         settings.fixed_delta_seconds = 1.0 / float(self.cfg.get("fps", 20.0))
         settings.no_rendering_mode = bool(self.cfg.get("no_rendering", False))
         self.world.apply_settings(settings)
+
+    def _apply_weather(self):
+        """Dat thoi tiet theo config `weather`; khong dat thi giu nguyen mac dinh cua ban do.
+
+        Phai goi LAI sau moi `load_world()` (xem `_rebind_world`): world moi dung len voi
+        thoi tiet mac dinh cua no, nen neu chi dat mot lan trong __init__ thi mot lo danh
+        gia nhieu ban do se im lang tut ve ClearNoon tu ban do thu hai tro di — va bang ket
+        qua se ghi nham nhan thoi tiet cho nhung ban do do.
+
+        Quan sat cua policy la anh phan vung ngu nghia, ve nguyen tac bat bien voi thoi
+        tiet; tham so nay ton tai chinh de KIEM CHUNG gia dinh do bang so lieu dong-kin thay
+        vi tin no, va de bao cao co truc "thoi tiet" do that. Xem
+        `drl_training_sac/check_weather_invariance.py` cho phep do tinh (xe dung yen).
+        """
+        name = self.cfg.get("weather")
+        if not name:
+            return
+        preset = getattr(carla.WeatherParameters, str(name), None)
+        if preset is None:
+            raise ValueError(
+                "weather='%s' khong phai preset cua carla.WeatherParameters. Cac gia tri "
+                "hop le: %s" % (name, ", ".join(WEATHER_PRESETS)))
+        self.world.set_weather(preset)
 
     def _check_control_rate(self):
         """Doi chieu nhip ra quyet dinh cua env voi `control_dt` ghi trong checkpoint IL.
