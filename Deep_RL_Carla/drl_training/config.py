@@ -300,6 +300,11 @@ def load_config(algorithm, argv=None):
                               "bat buoc de khong quen cac town ma IL da hoc. Mot ten = chay "
                               "co dinh (dung cho evaluate.py). Bo qua = dung mac dinh trong "
                               "config")
+    parser.add_argument("--weather", default=None,
+                         help="Preset thoi tiet CARLA (vd ClearNoon, HardRainNoon, ClearSunset). "
+                              "Khong dat = giu nguyen thoi tiet mac dinh cua ban do. Dung de "
+                              "chay ma tran danh gia theo thoi tiet: evaluate.py ghi ten nay "
+                              "vao cot 'weather' cua CSV ket qua.")
     parser.add_argument("--resume", default=None, help="Checkpoint DRL (.pt) de resume train / dung de eval")
     parser.add_argument("--no-warm-start", dest="warm_start", action="store_false", default=None,
                          help="Bo qua warm-start IL — actor khoi tao ngau nhien (chi de doi chung)")
@@ -349,7 +354,8 @@ def load_config(algorithm, argv=None):
 
     for key in ("host", "port", "il_checkpoint", "output", "total_steps", "n_steps",
                 "buffer_capacity", "width", "height", "obs_width", "obs_height",
-                "batch_size", "device", "action_repeat", "max_episode_steps", "town", "seed"):
+                "batch_size", "device", "action_repeat", "max_episode_steps", "town", "seed",
+                "weather"):
         value = getattr(args, key, None)
         if value is not None:
             config[key] = value

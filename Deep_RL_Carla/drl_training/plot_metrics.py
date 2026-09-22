@@ -594,6 +594,13 @@ def main():
                           "01_reward_curve", output_dir, args.reward_window)
     plot_learning_curve(runs, "episode_len", "So buoc / episode", "Duong hoc — Do dai episode",
                           "02_episode_length", output_dir, args.reward_window)
+    # Lech lan la chi so CHINH cua bai bam lan: reward gop ca toc do lan lai muot nen no
+    # tang duoc ma xe van bo lan. Ve rieng, va dung cot "_road" (bo doan nga tu, noi khong
+    # co lan de bam) de cung mot thang do voi baseline IL o bieu do 00b/09.
+    plot_learning_curve(runs, "mean_abs_lane_offset_road",
+                          "|lane_offset| trung binh (m)",
+                          "Duong hoc — Lech lan (chi duong thuong, bo nga tu)",
+                          "02b_lane_offset", output_dir, args.reward_window)
     plot_terminate_reason(runs, "03_terminate_reason", output_dir)
 
     ppo_run = next((r for r in runs if r.name == "PPO" and r.update_rows), None)
@@ -614,7 +621,8 @@ def main():
             [("critic_loss", "Critic loss", None), ("actor_loss", "Actor loss", None)],
             "SAC — Critic loss & Actor loss", "06_sac_losses", output_dir, args.reward_window)
         plot_update_diagnostic([sac_run],
-            [("alpha", "Temperature (alpha)", None), ("mean_q", "Mean Q", None),
+            [("explained_variance", "Explained variance (ev)", (0.0, "ev=0: critic vo dung")),
+             ("alpha", "Temperature (alpha)", None), ("mean_q", "Mean Q", None),
              ("entropy", "Entropy chinh sach", None)],
             "SAC — Chan doan huan luyen", "07_sac_diagnostics", output_dir, args.reward_window)
 
